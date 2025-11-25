@@ -1,0 +1,201 @@
+import React, { useEffect, useState } from "react";
+import { backupFileName, buildBackup } from "../lib/backup";
+import {
+  getDriveClientId,
+  getLastDriveSync,
+  importBackupFromDrive,
+  saveDriveClientId,
+  syncBackupToDrive,
+} from "../lib/driveSync";
+
+export const SettingsPage: React.FC = () => {
+  const [apiKey, setApiKey] = useState("");
+  const [status, setStatus] = useState<string | null>(null);
+  const [driveClientId, setDriveClientIdInput] = useState("");
+  const [driveStatus, setDriveStatus] = useState<string | null>(null);
+  const [driveBusy, setDriveBusy] = useState(false);
+  const [lastDriveSync, setLastDriveSync] = useState<string | null>(null);
+
+  useEffect(() => {
+    const stored = localStorage.getItem("openai_api_key");
+    if (stored) setApiKey(stored);
+    const storedDriveId = getDriveClientId();
+    if (storedDriveId) setDriveClientIdInput(storedDriveId);
+    setLastDriveSync(getLastDriveSync());
+  }, []);
+
+  const saveKey = () => {
+    localStorage.setItem("openai_api_key", apiKey.trim());
+    setStatus("Saved API key locally.");
+  };
+
+  const clearAllData = () => {
+    if (!confirm("This will clear all local data (logs, insights, settings). Continue?")) return;
+    indexedDB.databases?.().then((dbs) => {
+      dbs?.forEach((db) => {
+        if (db.name) indexedDB.deleteDatabase(db.name);
+      });
+    });
+    localStorage.clear();
+    setStatus("All local data cleared. Reload the page.");
+  };
+
+  const exportData = async () => {
+    const backup = await buildBackup();
+    const blob = new Blob([JSON.stringify(backup, null, 2)], {
+      type: "application/json",
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    const generatedAt = backup.generatedAt ? new Date(backup.generatedAt) : new Date();
+    a.href = url;
+    a.download = backupFileName(generatedAt);
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const saveDriveConfig = () => {
+    saveDriveClientId(driveClientId);
+    setDriveStatus("Saved Drive client ID locally.");
+  };
+
+  const runDriveSync = async () => {
+    if (!driveClientId.trim()) {
+      setDriveStatus("Add your Google Drive OAuth client ID first.");
+      return;
+    }
+    saveDriveClientId(driveClientId);
+    setDriveBusy(true);
+    setDriveStatus("Syncing data to Google Drive…");
+    try {
+      await syncBackupToDrive();
+      setDriveStatus("Synced backup to Google Drive.");
+      setLastDriveSync(getLastDriveSync());
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setDriveStatus(`Drive sync failed: ${msg}`);
+    } finally {
+      setDriveBusy(false);
+    }
+  };
+
+  const importFromDrive = async () => {
+    if (!driveClientId.trim()) {
+      setDriveStatus("Add your Google Drive OAuth client ID first.");
+      return;
+    }
+    saveDriveClientId(driveClientId);
+    const ok = confirm(
+      "This will replace ALL local data with the latest Drive backup. Continue?"
+    );
+    if (!ok) return;
+    setDriveBusy(true);
+    setDriveStatus("Importing backup from Google Drive…");
+    try {
+      const payload = await importBackupFromDrive();
+      setDriveStatus(
+        `Imported backup from Drive. ${payload.dailyLogs.length} logs, ${payload.dailyInsights.length} insights, ${payload.foodPresets.length} presets.`
+      );
+      setLastDriveSync(getLastDriveSync());
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setDriveStatus(`Drive import failed: ${msg}`);
+    } finally {
+      setDriveBusy(false);
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      <section className="space-y-2">
+        <h1 className="text-xl font-semibold">Settings</h1>
+        <p className="text-sm text-slate-400">
+          Configure your OpenAI API key and manage your local data. The app calls OpenAI directly from your device using your key.
+        </p>
+      </section>
+
+      <section className="space-y-2">
+        <h2 className="text-sm font-semibold text-slate-200">OpenAI API key</h2>
+        <p className="text-xs text-slate-400">
+          Create an API key in your OpenAI account, then paste it here. It is stored only in your browser&apos;s localStorage.
+        </p>
+        <input
+          type="password"
+          value={apiKey}
+          onChange={(e) => setApiKey(e.target.value)}
+          placeholder="sk-..."
+        />
+        <button
+          onClick={saveKey}
+          className="px-4 py-2 rounded-lg bg-indigo-500 hover:bg-indigo-600 text-sm"
+        >
+          Save API key
+        </button>
+        {status && <p className="text-xs text-emerald-400">{status}</p>}
+      </section>
+
+      <section className="space-y-2">
+        <h2 className="text-sm font-semibold text-slate-200">Google Drive sync</h2>
+        <p className="text-xs text-slate-400">
+          Save all local data to your Google Drive (private app data). You need a Google OAuth client ID
+          configured for web and Drive scope <code>drive.appdata</code>.
+        </p>
+        <input
+          type="text"
+          value={driveClientId}
+          onChange={(e) => setDriveClientIdInput(e.target.value)}
+          placeholder="Google OAuth client ID"
+        />
+        <div className="flex items-center gap-3 flex-wrap">
+          <button
+            onClick={saveDriveConfig}
+            className="px-3 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-xs"
+          >
+            Save client ID
+          </button>
+          <button
+            onClick={runDriveSync}
+            disabled={driveBusy}
+            className="px-3 py-2 rounded-lg bg-indigo-500 hover:bg-indigo-600 disabled:opacity-60 text-xs"
+          >
+            {driveBusy ? "Syncing…" : "Sync to Drive"}
+          </button>
+          <button
+            onClick={importFromDrive}
+            disabled={driveBusy}
+            className="px-3 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 disabled:opacity-60 text-xs"
+          >
+            {driveBusy ? "Working…" : "Import latest from Drive"}
+          </button>
+        </div>
+        {lastDriveSync && (
+          <p className="text-xs text-slate-400">Last Drive sync: {new Date(lastDriveSync).toLocaleString()}</p>
+        )}
+        {driveStatus && <p className="text-xs text-emerald-400">{driveStatus}</p>}
+      </section>
+
+      <section className="space-y-2">
+        <h2 className="text-sm font-semibold text-slate-200">Data export</h2>
+        <p className="text-xs text-slate-400">
+          Export all logs, insights, presets, and analysis jobs as a JSON file you can store or inspect elsewhere.
+        </p>
+        <button
+          onClick={exportData}
+          className="px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-sm"
+        >
+          Export JSON backup
+        </button>
+      </section>
+
+      <section className="space-y-2">
+        <h2 className="text-sm font-semibold text-red-300">Danger zone</h2>
+        <button
+          onClick={clearAllData}
+          className="px-4 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-sm"
+        >
+          Clear all local data
+        </button>
+      </section>
+    </div>
+  );
+};

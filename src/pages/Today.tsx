@@ -1,0 +1,815 @@
+import React, { useEffect, useMemo, useState } from "react";
+import { db, useLiveTodayLog, normalizeFoodKey, useAllFoodPresets, MealEntry } from "../lib/db";
+import { useAnalysisJobs } from "../lib/analysisJobs";
+import { runDailyInsightIfNeeded, runMealCaloriesEstimation } from "../lib/openai";
+
+export const TodayPage: React.FC = () => {
+  const { todayLog, loading } = useLiveTodayLog();
+  const { startJob, finishJob, failJob } = useAnalysisJobs();
+  const { presets: savedPresets } = useAllFoodPresets();
+  const [now, setNow] = useState(new Date());
+  const [newMeal, setNewMeal] = useState("");
+  const [manualCalories, setManualCalories] = useState("");
+  const [calorieConfidence, setCalorieConfidence] = useState("3");
+  const [saveAsPreset, setSaveAsPreset] = useState(false);
+  const [presetName, setPresetName] = useState("");
+  const [selectedPresetId, setSelectedPresetId] = useState<string>("");
+  const [symptomNotes, setSymptomNotes] = useState("");
+  const [manualInsightRunning, setManualInsightRunning] = useState(false);
+  const [editingMealId, setEditingMealId] = useState<string | null>(null);
+  const [editDescription, setEditDescription] = useState("");
+  const [editUserCalories, setEditUserCalories] = useState("");
+  const [editConfidence, setEditConfidence] = useState("");
+  const [editFinalCalories, setEditFinalCalories] = useState("");
+  const [editBusy, setEditBusy] = useState(false);
+
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 60_000);
+    return () => clearInterval(id);
+  }, []);
+
+  const isToday = useMemo(() => {
+    const d = new Date();
+    return todayLog?.date === d.toISOString().slice(0, 10);
+  }, [todayLog]);
+
+  useEffect(() => {
+    if (!todayLog) return;
+    if (!isToday) return;
+
+    const hour = now.getHours();
+    if (hour >= 22 && !todayLog.dailyInsightId) {
+      (async () => {
+        const jobId = startJob({
+          type: "daily",
+          label: `Daily – ${todayLog.date}`,
+        });
+        try {
+          await runDailyInsightIfNeeded(todayLog.date, { jobId });
+          finishJob(jobId);
+        } catch (e) {
+          console.error(e);
+          failJob(jobId, (e as Error).message);
+        }
+      })();
+    }
+  }, [now, todayLog, isToday, startJob, finishJob, failJob]);
+
+  useEffect(() => {
+    if (!todayLog) return;
+    const sorted = [...todayLog.meals].sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+    const alreadySorted =
+      sorted.length === todayLog.meals.length && sorted.every((m, idx) => m.id === todayLog.meals[idx].id);
+    if (alreadySorted) return;
+    db.dailyLogs.update(todayLog.id, {
+      meals: sorted,
+      updatedAt: new Date().toISOString(),
+    });
+  }, [todayLog]);
+
+  if (loading || !todayLog) {
+    return <div>Loading...</div>;
+  }
+
+  const handleWeightChange = async (value: string) => {
+    const weight = value ? Number(value) : undefined;
+    await db.dailyLogs.update(todayLog.id, {
+      weightKg: Number.isNaN(weight) ? undefined : weight,
+      updatedAt: new Date().toISOString(),
+    });
+  };
+
+  const handleSleepChange = async (value: string) => {
+    const hours = value ? Number(value) : undefined;
+    await db.dailyLogs.update(todayLog.id, {
+      sleepHours: Number.isNaN(hours) ? undefined : hours,
+      updatedAt: new Date().toISOString(),
+    });
+  };
+
+  const handleStressChange = async (value: string) => {
+    const lvl = value ? Number(value) : undefined;
+    await db.dailyLogs.update(todayLog.id, {
+      stressLevel: Number.isNaN(lvl) ? undefined : lvl,
+      updatedAt: new Date().toISOString(),
+    });
+  };
+
+  const handleBloatingChange = async (value: string) => {
+    const lvl = value ? Number(value) : undefined;
+    await db.dailyLogs.update(todayLog.id, {
+      bloating: Number.isNaN(lvl) ? undefined : lvl,
+      updatedAt: new Date().toISOString(),
+    });
+  };
+
+  const handleEnergyChange = async (value: string) => {
+    const lvl = value ? Number(value) : undefined;
+    await db.dailyLogs.update(todayLog.id, {
+      energy: Number.isNaN(lvl) ? undefined : lvl,
+      updatedAt: new Date().toISOString(),
+    });
+  };
+
+  const resetMealForm = () => {
+    setNewMeal("");
+    setPresetName("");
+    setSaveAsPreset(false);
+    setManualCalories("");
+    setCalorieConfidence("3");
+    setSelectedPresetId("");
+  };
+
+  const insertPresetIntoMeal = () => {
+    if (!selectedPresetId) return;
+    const preset = savedPresets.find((p) => String(p.id) === selectedPresetId);
+    if (!preset) return;
+    const snippet = `- ${preset.label} (from preset, fixed precalculated calories at ${preset.defaultCalories} kcal)`;
+    const nextText = newMeal.trim() ? `${newMeal.trim()}\n${snippet}` : snippet;
+    setNewMeal(nextText);
+
+    const currentCalories = Number(manualCalories);
+    const base = !Number.isNaN(currentCalories) ? currentCalories : 0;
+    const nextCalories = base + preset.defaultCalories;
+    setManualCalories(String(nextCalories));
+    setCalorieConfidence("5");
+  };
+
+  const runManualDailyAnalysis = async () => {
+    if (!todayLog) return;
+    setManualInsightRunning(true);
+    const jobId = startJob({
+      type: "daily",
+      label: `Daily – ${todayLog.date} (manual)`,
+    });
+    try {
+      const existing = await db.dailyInsights.where("date").equals(todayLog.date).toArray();
+      await Promise.all(existing.map((i) => db.dailyInsights.delete(String(i.id))));
+      await runDailyInsightIfNeeded(todayLog.date, { jobId });
+      finishJob(jobId);
+    } catch (e) {
+      console.error(e);
+      failJob(jobId, (e as Error).message);
+    } finally {
+      setManualInsightRunning(false);
+    }
+  };
+
+  const addMeal = async () => {
+    if (!newMeal.trim()) return;
+    const description = newMeal.trim();
+    const id = crypto.randomUUID();
+    const timestamp = new Date().toISOString();
+    const presetKey = normalizeFoodKey(description);
+    const nowIso = new Date().toISOString();
+
+    const manualCaloriesValue = Number(manualCalories);
+    const hasManualCalories = manualCalories.trim() !== "" && !Number.isNaN(manualCaloriesValue);
+    const confidenceValue = Number(calorieConfidence);
+    const entryBase = {
+      id,
+      timestamp,
+      description,
+      wantsPreset: saveAsPreset,
+      presetKey,
+      presetLabel: saveAsPreset ? (presetName.trim() || description) : undefined,
+      userCaloriesEstimate: hasManualCalories ? manualCaloriesValue : undefined,
+      userCaloriesConfidence:
+        hasManualCalories && !Number.isNaN(confidenceValue) ? confidenceValue : undefined,
+    };
+
+    const existingPreset = await db.foodPresets.where("key").equals(presetKey).first();
+
+    if (existingPreset) {
+      const entry = {
+        ...entryBase,
+        llmCaloriesEstimate: existingPreset.defaultCalories,
+        finalCaloriesEstimate: existingPreset.defaultCalories,
+        confirmedCalories: existingPreset.defaultCalories,
+        presetLabel: existingPreset.label,
+      };
+      await db.dailyLogs.update(todayLog.id, {
+        meals: [entry, ...todayLog.meals],
+        updatedAt: nowIso,
+      });
+
+      if (saveAsPreset && presetName.trim() && presetName.trim() !== existingPreset.label) {
+        await db.foodPresets.update(existingPreset.id!, {
+          label: presetName.trim(),
+          updatedAt: nowIso,
+        });
+      }
+
+      resetMealForm();
+      return;
+    }
+
+    await db.dailyLogs.update(todayLog.id, {
+      meals: [entryBase, ...todayLog.meals],
+      updatedAt: nowIso,
+    });
+    resetMealForm();
+
+    const jobId = startJob({
+      type: "custom",
+      label: `Calories – ${description.slice(0, 24)}`,
+    });
+    try {
+      const { calories, explanation } = await runMealCaloriesEstimation(
+        description,
+        {
+          userEstimate: hasManualCalories ? manualCaloriesValue : undefined,
+          userConfidence: hasManualCalories && !Number.isNaN(confidenceValue) ? confidenceValue : undefined,
+        },
+        { jobId }
+      );
+      const updatedLog = await db.dailyLogs.get(todayLog.id);
+      const updatedMeals = (updatedLog?.meals ?? []).map((m) =>
+        m.id === id
+          ? {
+              ...m,
+              llmCaloriesEstimate: calories,
+              llmCaloriesExplanation: explanation,
+              finalCaloriesEstimate: calories,
+            }
+          : m
+      );
+      await db.dailyLogs.update(todayLog.id, {
+        meals: updatedMeals,
+        updatedAt: new Date().toISOString(),
+      });
+
+      const meal = updatedMeals.find((m) => m.id === id);
+      if (meal?.wantsPreset && calories) {
+        const nowPresetIso = new Date().toISOString();
+        const key = meal.presetKey ?? normalizeFoodKey(meal.description);
+        const label = meal.presetLabel || meal.description;
+        const existingPreset = await db.foodPresets.where("key").equals(key).first();
+        if (!existingPreset) {
+          await db.foodPresets.add({
+            key,
+            label,
+            defaultCalories: calories,
+            createdAt: nowPresetIso,
+            updatedAt: nowPresetIso,
+          });
+        } else {
+          await db.foodPresets.update(existingPreset.id!, {
+            defaultCalories: calories,
+            label,
+            updatedAt: nowPresetIso,
+          });
+        }
+      }
+
+      finishJob(jobId);
+    } catch (e) {
+      console.error(e);
+      failJob(jobId, (e as Error).message);
+    }
+  };
+
+  const startEditingMeal = (meal: MealEntry) => {
+    setEditingMealId(meal.id);
+    setEditDescription(meal.description);
+    setEditUserCalories(meal.userCaloriesEstimate != null ? String(meal.userCaloriesEstimate) : "");
+    setEditConfidence(meal.userCaloriesConfidence != null ? String(meal.userCaloriesConfidence) : "");
+    const initialFinal =
+      meal.finalCaloriesEstimate ??
+      meal.llmCaloriesEstimate ??
+      meal.userCaloriesEstimate ??
+      meal.confirmedCalories;
+    setEditFinalCalories(initialFinal != null ? String(initialFinal) : "");
+  };
+
+  const cancelEditingMeal = () => {
+    setEditingMealId(null);
+    setEditDescription("");
+    setEditUserCalories("");
+    setEditConfidence("");
+    setEditFinalCalories("");
+    setEditBusy(false);
+  };
+
+  const saveMealEdits = async () => {
+    if (!editingMealId || !todayLog) return;
+    const target = todayLog.meals.find((m) => m.id === editingMealId);
+    if (!target) {
+      cancelEditingMeal();
+      return;
+    }
+
+    setEditBusy(true);
+    const description = (editDescription || target.description).trim();
+    const userEstimateParsed = editUserCalories.trim() !== "" ? Number(editUserCalories) : undefined;
+    const userEstimate = Number.isNaN(userEstimateParsed) ? undefined : userEstimateParsed;
+    const userConfidenceParsed = editConfidence.trim() !== "" ? Number(editConfidence) : undefined;
+    const userConfidence = Number.isNaN(userConfidenceParsed) ? undefined : userConfidenceParsed;
+    const finalParsed = editFinalCalories.trim() !== "" ? Number(editFinalCalories) : undefined;
+    const finalEstimate = Number.isNaN(finalParsed) ? undefined : finalParsed;
+
+    const descChanged = description !== target.description;
+    const userChanged = (userEstimate ?? undefined) !== (target.userCaloriesEstimate ?? undefined);
+    const confChanged = (userConfidence ?? undefined) !== (target.userCaloriesConfidence ?? undefined);
+    const shouldRerunLLM = descChanged || userChanged || confChanged;
+
+    const baseMeal: MealEntry = {
+      ...target,
+      description,
+      userCaloriesEstimate: userEstimate,
+      userCaloriesConfidence: userConfidence,
+      presetKey: normalizeFoodKey(description),
+    };
+
+    const nowIso = new Date().toISOString();
+    const updatedMeals = todayLog.meals.map((m) =>
+      m.id === target.id
+        ? {
+            ...baseMeal,
+            llmCaloriesEstimate: shouldRerunLLM ? undefined : m.llmCaloriesEstimate,
+            finalCaloriesEstimate: shouldRerunLLM ? undefined : finalEstimate,
+          }
+        : m
+    );
+
+    await db.dailyLogs.update(todayLog.id, {
+      meals: updatedMeals,
+      updatedAt: nowIso,
+    });
+
+    if (shouldRerunLLM) {
+      const jobId = startJob({
+        type: "custom",
+        label: `Calories – ${description.slice(0, 24)}`,
+      });
+      try {
+        const { calories, explanation } = await runMealCaloriesEstimation(
+          description,
+          {
+            userEstimate,
+            userConfidence,
+          },
+          { jobId }
+        );
+        const latest = await db.dailyLogs.get(todayLog.id);
+        const refreshedMeals = (latest?.meals ?? []).map((m) =>
+          m.id === target.id
+            ? {
+                ...m,
+                llmCaloriesEstimate: calories,
+                llmCaloriesExplanation: explanation,
+                finalCaloriesEstimate: calories,
+              }
+            : m
+        );
+        await db.dailyLogs.update(todayLog.id, {
+          meals: refreshedMeals,
+          updatedAt: new Date().toISOString(),
+        });
+        finishJob(jobId);
+      } catch (e) {
+        console.error(e);
+        failJob(jobId, (e as Error).message);
+      }
+    }
+
+    cancelEditingMeal();
+    setEditBusy(false);
+  };
+
+  const confirmMealCalories = async (mealId: string, caloriesStr: string) => {
+    const calories = Number(caloriesStr);
+    const nowIso = new Date().toISOString();
+
+    const updatedMeals = todayLog.meals.map((m) =>
+      m.id === mealId ? { ...m, confirmedCalories: Number.isNaN(calories) ? undefined : calories } : m
+    );
+
+    await db.dailyLogs.update(todayLog.id, {
+      meals: updatedMeals,
+      updatedAt: nowIso,
+    });
+
+    const meal = updatedMeals.find((m) => m.id === mealId);
+    if (!meal || !meal.wantsPreset) return;
+    if (!calories || Number.isNaN(calories)) return;
+
+    const key = meal.presetKey ?? normalizeFoodKey(meal.description);
+    const label = meal.presetLabel || meal.description;
+
+    const existingPreset = await db.foodPresets.where("key").equals(key).first();
+    if (!existingPreset) {
+      await db.foodPresets.add({
+        key,
+        label,
+        defaultCalories: calories,
+        createdAt: nowIso,
+        updatedAt: nowIso,
+      });
+    } else {
+      await db.foodPresets.update(existingPreset.id!, {
+        defaultCalories: calories,
+        label,
+        updatedAt: nowIso,
+      });
+    }
+  };
+
+  const deleteMeal = async (mealId: string) => {
+    if (!confirm("Delete this meal?")) return;
+    const updatedMeals = todayLog.meals.filter((m) => m.id !== mealId);
+    await db.dailyLogs.update(todayLog.id, {
+      meals: updatedMeals,
+      updatedAt: new Date().toISOString(),
+    });
+  };
+
+  const addSymptoms = async () => {
+    if (!symptomNotes.trim()) return;
+    const entry = {
+      id: crypto.randomUUID(),
+      timestamp: new Date().toISOString(),
+      notes: symptomNotes.trim(),
+    };
+    await db.dailyLogs.update(todayLog.id, {
+      symptoms: [...todayLog.symptoms, entry],
+      updatedAt: new Date().toISOString(),
+    });
+    setSymptomNotes("");
+  };
+
+  const nowHour = now.getHours();
+  const canSetStress = !isToday || nowHour >= 19;
+
+  return (
+    <div className="space-y-6">
+      <section className="space-y-2">
+        <h1 className="text-xl font-semibold">Today – {todayLog.date}</h1>
+        <p className="text-sm text-slate-400">
+          Log your day. Daily analysis runs automatically around 22:00 using your recent history.
+        </p>
+        <button
+          onClick={runManualDailyAnalysis}
+          disabled={manualInsightRunning}
+          className="text-xs px-3 py-2 rounded-md border border-slate-700 hover:border-indigo-500 disabled:opacity-60"
+        >
+          {manualInsightRunning ? "Running daily analysis..." : "Run daily analysis now"}
+        </button>
+      </section>
+
+      <section className="grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5">
+        <div className="space-y-1">
+          <label className="text-xs font-medium text-slate-400">Weight (kg)</label>
+          <input
+            type="number"
+            step="0.1"
+            className="w-full"
+            value={todayLog.weightKg ?? ""}
+            onChange={(e) => handleWeightChange(e.target.value)}
+            placeholder="e.g. 68.4"
+          />
+        </div>
+        <div className="space-y-1">
+          <label className="text-xs font-medium text-slate-400">Sleep (hours)</label>
+          <input
+            type="number"
+            step="0.1"
+            className="w-full"
+            value={todayLog.sleepHours ?? ""}
+            onChange={(e) => handleSleepChange(e.target.value)}
+            placeholder="e.g. 7.5"
+          />
+        </div>
+        <div className="space-y-1">
+          <label className="text-xs font-medium text-slate-400">
+            Stress (0–5){isToday && !canSetStress ? " – after 19:00" : ""}
+          </label>
+          <input
+            type="number"
+            min={0}
+            max={5}
+            className="w-full"
+            value={todayLog.stressLevel ?? ""}
+            onChange={(e) => handleStressChange(e.target.value)}
+            disabled={!canSetStress}
+          />
+        </div>
+        <div className="space-y-1">
+          <label className="text-xs font-medium text-slate-400">Bloating (0–5)</label>
+          <input
+            type="number"
+            min={0}
+            max={5}
+            className="w-full"
+            value={todayLog.bloating ?? ""}
+            onChange={(e) => handleBloatingChange(e.target.value)}
+          />
+        </div>
+        <div className="space-y-1">
+          <label className="text-xs font-medium text-slate-400">Energy (0–5)</label>
+          <input
+            type="number"
+            min={0}
+            max={5}
+            className="w-full"
+            value={todayLog.energy ?? ""}
+            onChange={(e) => handleEnergyChange(e.target.value)}
+          />
+        </div>
+      </section>
+
+      <section className="space-y-3">
+        <h2 className="text-sm font-semibold text-slate-200">Meals</h2>
+        <div className="flex flex-col gap-2">
+          <textarea
+            className="flex-1 min-h-[60px]"
+            value={newMeal}
+            onChange={(e) => setNewMeal(e.target.value)}
+            placeholder="e.g. 200g Greek yogurt, 1 banana, 15g walnuts"
+          />
+          <div className="grid gap-2 sm:grid-cols-2">
+            <div className="space-y-1">
+              <label className="text-xs text-slate-400">Insert preset into description</label>
+              <div className="flex flex-col sm:flex-row gap-2">
+                <select
+                  value={selectedPresetId}
+                  onChange={(e) => setSelectedPresetId(e.target.value)}
+                  className="flex-1"
+                >
+                  <option value="">Choose a preset</option>
+                  {savedPresets.map((p) => (
+                    <option key={p.id ?? p.key} value={String(p.id)}>
+                      {p.label} – {p.defaultCalories} kcal
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={insertPresetIntoMeal}
+                  className="text-xs px-3 py-2 rounded-md border border-slate-700 hover:border-indigo-500"
+                >
+                  Insert
+                </button>
+              </div>
+              <p className="text-[11px] text-slate-500">
+                Adds preset text with exact calories into the meal so AI treats it as certain.
+              </p>
+            </div>
+          </div>
+          <div className="grid gap-2 sm:grid-cols-2">
+            <div className="space-y-1">
+              <label className="text-xs text-slate-400">Your calorie estimate (optional)</label>
+              <input
+                type="number"
+                value={manualCalories}
+                onChange={(e) => setManualCalories(e.target.value)}
+                placeholder="e.g. 420"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs text-slate-400">Confidence (1–5)</label>
+              <select
+                value={calorieConfidence}
+                onChange={(e) => setCalorieConfidence(e.target.value)}
+                disabled={!manualCalories.trim()}
+              >
+                <option value="1">1 – Not confident</option>
+                <option value="2">2</option>
+                <option value="3">3 – Moderate</option>
+                <option value="4">4</option>
+                <option value="5">5 – Very confident</option>
+              </select>
+            </div>
+          </div>
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
+            <label className="flex items-center gap-2 text-xs text-slate-400">
+              <input
+                type="checkbox"
+                className="h-4 w-4 rounded border-slate-600"
+                checked={saveAsPreset}
+                onChange={(e) => setSaveAsPreset(e.target.checked)}
+              />
+              Save this as a reusable preset
+            </label>
+            {saveAsPreset && (
+              <input
+                type="text"
+                className="text-xs w-full sm:w-56"
+                placeholder="Preset name (e.g. Standard cappuccino)"
+                value={presetName}
+                onChange={(e) => setPresetName(e.target.value)}
+              />
+            )}
+            <button
+              onClick={addMeal}
+              className="px-4 py-2 rounded-lg bg-indigo-500 hover:bg-indigo-600 text-sm self-stretch sm:self-auto"
+            >
+              Add meal
+            </button>
+          </div>
+        </div>
+        <div className="space-y-2">
+          {todayLog.meals.length === 0 && (
+            <p className="text-xs text-slate-500">No meals logged yet.</p>
+          )}
+          {todayLog.meals.map((meal) => {
+            const finalCalories = meal.finalCaloriesEstimate ?? meal.llmCaloriesEstimate;
+            const calories = meal.confirmedCalories ?? finalCalories ?? meal.userCaloriesEstimate;
+            const isEditing = editingMealId === meal.id;
+            return (
+              <div
+                key={meal.id}
+                className="border border-slate-800 rounded-xl px-3 py-2 flex flex-col gap-1"
+              >
+                <div className="flex justify-between items-start gap-3">
+                  <div className="flex-1">
+                    {isEditing ? (
+                      <textarea
+                        className="w-full text-sm"
+                        value={editDescription}
+                        onChange={(e) => setEditDescription(e.target.value)}
+                      />
+                    ) : (
+                      <div className="text-sm text-slate-100 whitespace-pre-wrap">{meal.description}</div>
+                    )}
+                    {!isEditing && calories != null && (
+                      <div className="text-sm font-semibold text-indigo-100 mt-1">
+                        Final estimate: {calories} kcal
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] text-slate-500">
+                      {new Date(meal.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                    </span>
+                    {isEditing ? (
+                      <button
+                        onClick={cancelEditingMeal}
+                        className="text-[11px] px-2 py-1 rounded-md border border-slate-700 text-slate-400 hover:border-slate-500"
+                      >
+                        Cancel
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => startEditingMeal(meal)}
+                        className="text-[11px] px-2 py-1 rounded-md border border-slate-700 text-slate-400 hover:border-indigo-400"
+                      >
+                        Edit
+                      </button>
+                    )}
+                    <button
+                      onClick={() => deleteMeal(meal.id)}
+                      className="text-[11px] px-2 py-1 rounded-md border border-slate-700 text-slate-400 hover:border-red-500 hover:text-red-200"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </div>
+                {isEditing ? (
+                  <div className="space-y-2">
+                    <div className="grid sm:grid-cols-3 gap-2">
+                      <div className="space-y-1">
+                        <label className="text-[11px] text-slate-400">Your estimate</label>
+                        <input
+                          type="number"
+                          value={editUserCalories}
+                          onChange={(e) => setEditUserCalories(e.target.value)}
+                          placeholder="e.g. 420"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[11px] text-slate-400">Confidence (1–5)</label>
+                        <select value={editConfidence} onChange={(e) => setEditConfidence(e.target.value)}>
+                          <option value="">Not set</option>
+                          <option value="1">1</option>
+                          <option value="2">2</option>
+                          <option value="3">3</option>
+                          <option value="4">4</option>
+                          <option value="5">5</option>
+                        </select>
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[11px] text-slate-400">Final estimate (editable)</label>
+                        <input
+                          type="number"
+                          value={editFinalCalories}
+                          onChange={(e) => setEditFinalCalories(e.target.value)}
+                          placeholder="e.g. 480"
+                        />
+                      </div>
+                    </div>
+                    <p className="text-[11px] text-slate-500">
+                      Editing the description, your estimate, or confidence will re-run the LLM and reset the final
+                      estimate to the new LLM result.
+                    </p>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={saveMealEdits}
+                        disabled={editBusy}
+                        className="text-xs px-3 py-2 rounded-md bg-indigo-500 hover:bg-indigo-600 disabled:opacity-60"
+                      >
+                        {editBusy ? "Saving..." : "Save meal"}
+                      </button>
+                      <button
+                        onClick={cancelEditingMeal}
+                        className="text-xs px-3 py-2 rounded-md border border-slate-700 hover:border-slate-500 text-slate-300"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex flex-wrap items-center gap-2 text-xs text-slate-400">
+                    {meal.presetLabel && (
+                      <span className="text-emerald-400">
+                        Preset: {meal.presetLabel}
+                      </span>
+                    )}
+                    {meal.userCaloriesEstimate != null && (
+                      <span>
+                        Your estimate:{" "}
+                        <span className="text-amber-300 font-medium">
+                          {meal.userCaloriesEstimate} kcal
+                        </span>
+                        {meal.userCaloriesConfidence ? ` (${meal.userCaloriesConfidence}/5 confidence)` : ""}
+                      </span>
+                    )}
+                    {meal.llmCaloriesEstimate != null && (
+                      <span>
+                        LLM estimate:{" "}
+                        <span className="text-indigo-300 font-medium">
+                          {meal.llmCaloriesEstimate} kcal
+                        </span>
+                      </span>
+                    )}
+                    {meal.finalCaloriesEstimate != null && (
+                      <span>
+                        Final estimate:{" "}
+                        <span className="text-slate-100 font-medium">
+                          {meal.finalCaloriesEstimate} kcal
+                        </span>
+                      </span>
+                    )}
+                    {meal.llmCaloriesExplanation && (
+                      <span className="text-[11px] text-slate-500">
+                        Reason: {meal.llmCaloriesExplanation}
+                      </span>
+                    )}
+                    {meal.confirmedCalories != null && (
+                      <span>
+                        Confirmed:{" "}
+                        <span className="text-emerald-300 font-medium">
+                          {meal.confirmedCalories} kcal
+                        </span>
+                      </span>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </section>
+
+      <section className="space-y-3">
+        <h2 className="text-sm font-semibold text-slate-200">Symptoms</h2>
+        <div className="space-y-1">
+          <label className="text-xs text-slate-400">Notes</label>
+          <textarea
+            className="w-full min-h-[60px]"
+            value={symptomNotes}
+            onChange={(e) => setSymptomNotes(e.target.value)}
+            placeholder="e.g. gassy in the evening, upper stomach pressure"
+          />
+        </div>
+        <button
+          onClick={addSymptoms}
+          className="px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-sm"
+        >
+          Add symptom entry
+        </button>
+        <div className="space-y-1">
+          {todayLog.symptoms.length === 0 && (
+            <p className="text-xs text-slate-500">No symptoms logged yet.</p>
+          )}
+          {todayLog.symptoms.map((s) => (
+            <div
+              key={s.id}
+              className="border border-slate-800 rounded-xl px-3 py-2 flex flex-col gap-1 text-xs text-slate-300"
+            >
+              <div className="flex justify-between">
+                <span className="text-[10px] text-slate-500">
+                  {new Date(s.timestamp).toLocaleTimeString([], {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })}
+                </span>
+              </div>
+              {s.notes && <p className="text-slate-400">{s.notes}</p>}
+            </div>
+          ))}
+        </div>
+      </section>
+    </div>
+  );
+};
