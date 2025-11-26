@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Food Coach</string>
+    <string name="title_activity_main">Food Coach</string>
+    <string name="package_name">com.xtrinch.foodcoach</string>
+    <string name="custom_url_scheme">com.xtrinch.foodcoach</string>
+</resources>

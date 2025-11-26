@@ -5,6 +5,10 @@ node_modules/
 dist/
 build/
 .vite/
+android/app/build/
+android/build/
+android/capacitor-cordova-android-plugins/
+android/.gradle/
 
 # Testing/coverage
 coverage/
@@ -14,6 +18,7 @@ coverage/
 .env.*
 .DS_Store
 *.local
+android/local.properties
 
 # Logs
 npm-debug.log*
