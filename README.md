@@ -1,6 +1,6 @@
 # Food Coach – Local‑Only AI Food & Health Advisor
 
-Food Coach is a **fully client-side nutrition, symptom, and daily-health tracking app** with **AI‑powered insights**.  
+Food Coach is a **fully client-side nutrition, notes, and daily-health tracking app** with **AI‑powered insights**.  
 It runs entirely on the user’s device, stores all data locally using IndexedDB, and uses the **user’s own OpenAI API key** for all AI calls.
 
 No backend. No server. No accounts.  
@@ -54,7 +54,7 @@ Analyzes:
 - stress
 - weight
 - meals
-- symptoms  
+- notes  
 …over the last ~14 days.
 
 Generates:
@@ -83,6 +83,8 @@ Stored forever in IndexedDB.
 - Export all data (logs, insights, presets, jobs) as JSON
 - Manual Google Drive backup/restore (private app data)
 - Clear all local data (danger zone)
+  
+Google Drive uses a baked-in OAuth client ID (env `VITE_GOOGLE_CLIENT_ID`, default: `130912411880-u34hui50kge8g4kjvc7m88slfsoutrj5.apps.googleusercontent.com`).
 
 ### 💾 Local-Only Storage
 - IndexedDB via Dexie

@@ -10,7 +10,7 @@ export const HistoryPage: React.FC = () => {
     <div className="space-y-4">
       <h1 className="text-xl font-semibold">History</h1>
       <p className="text-sm text-slate-400">
-        Browse all your past days, including meals, symptoms, and basics.
+        Browse all your past days, including meals, notes, and basics.
       </p>
       {logs.length === 0 && (
         <p className="text-sm text-slate-500">No logs yet. Start by logging today.</p>
@@ -24,7 +24,7 @@ export const HistoryPage: React.FC = () => {
             <div className="flex justify-between items-center">
               <span className="font-medium text-slate-100">{log.date}</span>
               <span className="text-xs text-slate-500">
-                Meals: {log.meals.length} · Symptoms: {log.symptoms.length}
+                Meals: {log.meals.length} · Notes: {log.notes.length}
               </span>
             </div>
             <div className="flex flex-wrap gap-3 text-xs text-slate-400">
@@ -54,9 +54,9 @@ export const HistoryPage: React.FC = () => {
                   ))}
                 </div>
                 <div>
-                  <div className="font-semibold text-slate-200 mb-1">Symptoms</div>
-                  {log.symptoms.length === 0 && <div className="text-slate-500">No symptoms.</div>}
-                  {log.symptoms.map((s) => (
+                  <div className="font-semibold text-slate-200 mb-1">Notes</div>
+                  {log.notes.length === 0 && <div className="text-slate-500">No notes.</div>}
+                  {log.notes.map((s) => (
                     <div key={s.id} className="space-y-1">
                       <span className="text-[10px] text-slate-500">
                         {new Date(s.timestamp).toLocaleTimeString([], {

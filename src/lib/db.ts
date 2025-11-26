@@ -19,6 +19,7 @@ export type MealEntry = {
   id: string;
   timestamp: string;
   description: string;
+  photoDataUrl?: string;        // optional image to replace/augment description
   userCaloriesEstimate?: number;
   userCaloriesConfidence?: number; // 1-5 self-reported confidence
   llmCaloriesEstimate?: number;
@@ -30,10 +31,9 @@ export type MealEntry = {
   wantsPreset?: boolean;
 };
 
-export type SymptomEntry = {
+export type NoteEntry = {
   id: string;
   timestamp: string;
-  mood?: string;
   notes?: string;
 };
 
@@ -46,7 +46,7 @@ export type DailyLog = {
   bloating?: number;
   energy?: number;
   meals: MealEntry[];
-  symptoms: SymptomEntry[];
+  notes: NoteEntry[];
   dailyInsightId?: string;
   createdAt: string;
   updatedAt: string;
@@ -111,6 +111,22 @@ export class FoodCoachDB extends Dexie {
       foodPresets: "++id,key",
       analysisJobs: "id,startedAt,status"
     });
+    this.version(7)
+      .stores({
+        dailyLogs: "id,date",
+        dailyInsights: "++id,date",
+        foodPresets: "++id,key",
+        analysisJobs: "id,startedAt,status"
+      })
+      .upgrade(async (tx) => {
+        const logs = tx.table("dailyLogs");
+        await logs.toCollection().modify((log: any) => {
+          if (log.notes == null && Array.isArray(log.symptoms)) {
+            log.notes = log.symptoms;
+          }
+          delete log.symptoms;
+        });
+      });
   }
 }
 
@@ -136,7 +152,7 @@ export function useLiveTodayLog() {
         id: todayId,
         date: todayId,
         meals: [],
-        symptoms: [],
+        notes: [],
         createdAt: now,
         updatedAt: now,
       };

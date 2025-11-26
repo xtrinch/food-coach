@@ -1,26 +1,18 @@
 import React, { useEffect, useState } from "react";
 import { backupFileName, buildBackup } from "../lib/backup";
-import {
-  getDriveClientId,
-  getLastDriveSync,
-  importBackupFromDrive,
-  saveDriveClientId,
-  syncBackupToDrive,
-} from "../lib/driveSync";
+import { getDriveClientId, getLastDriveSync, importBackupFromDrive, syncBackupToDrive } from "../lib/driveSync";
 
 export const SettingsPage: React.FC = () => {
   const [apiKey, setApiKey] = useState("");
   const [status, setStatus] = useState<string | null>(null);
-  const [driveClientId, setDriveClientIdInput] = useState("");
   const [driveStatus, setDriveStatus] = useState<string | null>(null);
   const [driveBusy, setDriveBusy] = useState(false);
   const [lastDriveSync, setLastDriveSync] = useState<string | null>(null);
+  const driveClientId = getDriveClientId();
 
   useEffect(() => {
     const stored = localStorage.getItem("openai_api_key");
     if (stored) setApiKey(stored);
-    const storedDriveId = getDriveClientId();
-    if (storedDriveId) setDriveClientIdInput(storedDriveId);
     setLastDriveSync(getLastDriveSync());
   }, []);
 
@@ -54,17 +46,11 @@ export const SettingsPage: React.FC = () => {
     URL.revokeObjectURL(url);
   };
 
-  const saveDriveConfig = () => {
-    saveDriveClientId(driveClientId);
-    setDriveStatus("Saved Drive client ID locally.");
-  };
-
   const runDriveSync = async () => {
     if (!driveClientId.trim()) {
       setDriveStatus("Add your Google Drive OAuth client ID first.");
       return;
     }
-    saveDriveClientId(driveClientId);
     setDriveBusy(true);
     setDriveStatus("Syncing data to Google Drive…");
     try {
@@ -84,7 +70,6 @@ export const SettingsPage: React.FC = () => {
       setDriveStatus("Add your Google Drive OAuth client ID first.");
       return;
     }
-    saveDriveClientId(driveClientId);
     const ok = confirm(
       "This will replace ALL local data with the latest Drive backup. Continue?"
     );
@@ -137,22 +122,12 @@ export const SettingsPage: React.FC = () => {
       <section className="space-y-2">
         <h2 className="text-sm font-semibold text-slate-200">Google Drive sync</h2>
         <p className="text-xs text-slate-400">
-          Save all local data to your Google Drive (private app data). You need a Google OAuth client ID
-          configured for web and Drive scope <code>drive.appdata</code>.
+          Save all local data to your Google Drive in a visible folder. Uses OAuth client ID configured at build time.
         </p>
-        <input
-          type="text"
-          value={driveClientId}
-          onChange={(e) => setDriveClientIdInput(e.target.value)}
-          placeholder="Google OAuth client ID"
-        />
+        <p className="text-[11px] text-slate-500">
+          Client ID in use: <code>{driveClientId || "not configured"}</code>
+        </p>
         <div className="flex items-center gap-3 flex-wrap">
-          <button
-            onClick={saveDriveConfig}
-            className="px-3 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-xs"
-          >
-            Save client ID
-          </button>
           <button
             onClick={runDriveSync}
             disabled={driveBusy}

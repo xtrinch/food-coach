@@ -48,10 +48,17 @@ export function normalizeBackupPayload(raw: unknown): BackupPayload {
   const foodPresets = (data.foodPresets ?? data.presets ?? []) as FoodPreset[];
   const analysisJobs = (data.analysisJobs ?? []) as AnalysisJobRecord[];
 
+  const normalizedLogs = dailyLogs.map((log) => {
+    const notes = (log as any).notes ?? (log as any).symptoms ?? [];
+    const cleaned = { ...log, notes };
+    delete (cleaned as any).symptoms;
+    return cleaned;
+  });
+
   return {
     version: 1,
     generatedAt: data.generatedAt ?? new Date().toISOString(),
-    dailyLogs,
+    dailyLogs: normalizedLogs,
     dailyInsights,
     foodPresets,
     analysisJobs,

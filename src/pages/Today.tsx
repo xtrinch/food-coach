@@ -14,7 +14,7 @@ export const TodayPage: React.FC = () => {
   const [saveAsPreset, setSaveAsPreset] = useState(false);
   const [presetName, setPresetName] = useState("");
   const [selectedPresetId, setSelectedPresetId] = useState<string>("");
-  const [symptomNotes, setSymptomNotes] = useState("");
+  const [noteText, setNoteText] = useState("");
   const [manualInsightRunning, setManualInsightRunning] = useState(false);
   const [editingMealId, setEditingMealId] = useState<string | null>(null);
   const [editDescription, setEditDescription] = useState("");
@@ -22,6 +22,19 @@ export const TodayPage: React.FC = () => {
   const [editConfidence, setEditConfidence] = useState("");
   const [editFinalCalories, setEditFinalCalories] = useState("");
   const [editBusy, setEditBusy] = useState(false);
+  const [mealPhotoDataUrl, setMealPhotoDataUrl] = useState<string | null>(null);
+  const [editPhotoDataUrl, setEditPhotoDataUrl] = useState<string | null>(null);
+
+  const handlePhotoUpload = (file: File, setter: (data: string | null) => void) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result;
+      if (typeof result === "string") {
+        setter(result);
+      }
+    };
+    reader.readAsDataURL(file);
+  };
 
   useEffect(() => {
     const id = setInterval(() => setNow(new Date()), 60_000);
@@ -118,6 +131,7 @@ export const TodayPage: React.FC = () => {
     setManualCalories("");
     setCalorieConfidence("3");
     setSelectedPresetId("");
+    setMealPhotoDataUrl(null);
   };
 
   const insertPresetIntoMeal = () => {
@@ -156,8 +170,8 @@ export const TodayPage: React.FC = () => {
   };
 
   const addMeal = async () => {
-    if (!newMeal.trim()) return;
-    const description = newMeal.trim();
+    if (!newMeal.trim() && !mealPhotoDataUrl) return;
+    const description = newMeal.trim() || "(Photo meal)";
     const id = crypto.randomUUID();
     const timestamp = new Date().toISOString();
     const presetKey = normalizeFoodKey(description);
@@ -173,6 +187,7 @@ export const TodayPage: React.FC = () => {
       wantsPreset: saveAsPreset,
       presetKey,
       presetLabel: saveAsPreset ? (presetName.trim() || description) : undefined,
+      photoDataUrl: mealPhotoDataUrl || undefined,
       userCaloriesEstimate: hasManualCalories ? manualCaloriesValue : undefined,
       userCaloriesConfidence:
         hasManualCalories && !Number.isNaN(confidenceValue) ? confidenceValue : undefined,
@@ -220,6 +235,7 @@ export const TodayPage: React.FC = () => {
         {
           userEstimate: hasManualCalories ? manualCaloriesValue : undefined,
           userConfidence: hasManualCalories && !Number.isNaN(confidenceValue) ? confidenceValue : undefined,
+          photoDataUrl: mealPhotoDataUrl || undefined,
         },
         { jobId }
       );
@@ -280,6 +296,7 @@ export const TodayPage: React.FC = () => {
       meal.userCaloriesEstimate ??
       meal.confirmedCalories;
     setEditFinalCalories(initialFinal != null ? String(initialFinal) : "");
+    setEditPhotoDataUrl(meal.photoDataUrl ?? null);
   };
 
   const cancelEditingMeal = () => {
@@ -289,6 +306,7 @@ export const TodayPage: React.FC = () => {
     setEditConfidence("");
     setEditFinalCalories("");
     setEditBusy(false);
+    setEditPhotoDataUrl(null);
   };
 
   const saveMealEdits = async () => {
@@ -300,7 +318,7 @@ export const TodayPage: React.FC = () => {
     }
 
     setEditBusy(true);
-    const description = (editDescription || target.description).trim();
+    const description = (editDescription || target.description).trim() || "(Photo meal)";
     const userEstimateParsed = editUserCalories.trim() !== "" ? Number(editUserCalories) : undefined;
     const userEstimate = Number.isNaN(userEstimateParsed) ? undefined : userEstimateParsed;
     const userConfidenceParsed = editConfidence.trim() !== "" ? Number(editConfidence) : undefined;
@@ -311,7 +329,8 @@ export const TodayPage: React.FC = () => {
     const descChanged = description !== target.description;
     const userChanged = (userEstimate ?? undefined) !== (target.userCaloriesEstimate ?? undefined);
     const confChanged = (userConfidence ?? undefined) !== (target.userCaloriesConfidence ?? undefined);
-    const shouldRerunLLM = descChanged || userChanged || confChanged;
+    const photoChanged = (editPhotoDataUrl ?? null) !== (target.photoDataUrl ?? null);
+    const shouldRerunLLM = descChanged || userChanged || confChanged || photoChanged;
 
     const baseMeal: MealEntry = {
       ...target,
@@ -319,6 +338,7 @@ export const TodayPage: React.FC = () => {
       userCaloriesEstimate: userEstimate,
       userCaloriesConfidence: userConfidence,
       presetKey: normalizeFoodKey(description),
+      photoDataUrl: editPhotoDataUrl || undefined,
     };
 
     const nowIso = new Date().toISOString();
@@ -327,6 +347,7 @@ export const TodayPage: React.FC = () => {
         ? {
             ...baseMeal,
             llmCaloriesEstimate: shouldRerunLLM ? undefined : m.llmCaloriesEstimate,
+            llmCaloriesExplanation: shouldRerunLLM ? undefined : m.llmCaloriesExplanation,
             finalCaloriesEstimate: shouldRerunLLM ? undefined : finalEstimate,
           }
         : m
@@ -348,6 +369,7 @@ export const TodayPage: React.FC = () => {
           {
             userEstimate,
             userConfidence,
+            photoDataUrl: editPhotoDataUrl || undefined,
           },
           { jobId }
         );
@@ -424,18 +446,18 @@ export const TodayPage: React.FC = () => {
     });
   };
 
-  const addSymptoms = async () => {
-    if (!symptomNotes.trim()) return;
+  const addNoteEntry = async () => {
+    if (!noteText.trim()) return;
     const entry = {
       id: crypto.randomUUID(),
       timestamp: new Date().toISOString(),
-      notes: symptomNotes.trim(),
+      notes: noteText.trim(),
     };
     await db.dailyLogs.update(todayLog.id, {
-      symptoms: [...todayLog.symptoms, entry],
+      notes: [...todayLog.notes, entry],
       updatedAt: new Date().toISOString(),
     });
-    setSymptomNotes("");
+    setNoteText("");
   };
 
   const nowHour = now.getHours();
@@ -457,152 +479,200 @@ export const TodayPage: React.FC = () => {
         </button>
       </section>
 
-      <section className="grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5">
-        <div className="space-y-1">
-          <label className="text-xs font-medium text-slate-400">Weight (kg)</label>
-          <input
-            type="number"
-            step="0.1"
-            className="w-full"
-            value={todayLog.weightKg ?? ""}
-            onChange={(e) => handleWeightChange(e.target.value)}
-            placeholder="e.g. 68.4"
-          />
+      <section className="space-y-3 rounded-2xl border border-slate-800 bg-slate-900/40 p-4">
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <h2 className="text-sm font-semibold text-slate-200">Daily basics</h2>
+          <p className="text-[11px] text-slate-500">Once per day: weight, sleep, stress, bloating, energy.</p>
         </div>
-        <div className="space-y-1">
-          <label className="text-xs font-medium text-slate-400">Sleep (hours)</label>
-          <input
-            type="number"
-            step="0.1"
-            className="w-full"
-            value={todayLog.sleepHours ?? ""}
-            onChange={(e) => handleSleepChange(e.target.value)}
-            placeholder="e.g. 7.5"
-          />
-        </div>
-        <div className="space-y-1">
-          <label className="text-xs font-medium text-slate-400">
-            Stress (0–5){isToday && !canSetStress ? " – after 19:00" : ""}
-          </label>
-          <input
-            type="number"
-            min={0}
-            max={5}
-            className="w-full"
-            value={todayLog.stressLevel ?? ""}
-            onChange={(e) => handleStressChange(e.target.value)}
-            disabled={!canSetStress}
-          />
-        </div>
-        <div className="space-y-1">
-          <label className="text-xs font-medium text-slate-400">Bloating (0–5)</label>
-          <input
-            type="number"
-            min={0}
-            max={5}
-            className="w-full"
-            value={todayLog.bloating ?? ""}
-            onChange={(e) => handleBloatingChange(e.target.value)}
-          />
-        </div>
-        <div className="space-y-1">
-          <label className="text-xs font-medium text-slate-400">Energy (0–5)</label>
-          <input
-            type="number"
-            min={0}
-            max={5}
-            className="w-full"
-            value={todayLog.energy ?? ""}
-            onChange={(e) => handleEnergyChange(e.target.value)}
-          />
+        <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5">
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-slate-400">Weight (kg)</label>
+            <input
+              type="number"
+              step="0.1"
+              className="w-full"
+              value={todayLog.weightKg ?? ""}
+              onChange={(e) => handleWeightChange(e.target.value)}
+              placeholder="e.g. 68.4"
+            />
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-slate-400">Sleep (hours)</label>
+            <input
+              type="number"
+              step="0.1"
+              className="w-full"
+              value={todayLog.sleepHours ?? ""}
+              onChange={(e) => handleSleepChange(e.target.value)}
+              placeholder="e.g. 7.5"
+            />
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-slate-400">
+              Stress (0–5){isToday && !canSetStress ? " – after 19:00" : ""}
+            </label>
+            <input
+              type="number"
+              min={0}
+              max={5}
+              className="w-full"
+              value={todayLog.stressLevel ?? ""}
+              onChange={(e) => handleStressChange(e.target.value)}
+              disabled={!canSetStress}
+            />
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-slate-400">Bloating (0–5)</label>
+            <input
+              type="number"
+              min={0}
+              max={5}
+              className="w-full"
+              value={todayLog.bloating ?? ""}
+              onChange={(e) => handleBloatingChange(e.target.value)}
+            />
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-slate-400">Energy (0–5)</label>
+            <input
+              type="number"
+              min={0}
+              max={5}
+              className="w-full"
+              value={todayLog.energy ?? ""}
+              onChange={(e) => handleEnergyChange(e.target.value)}
+            />
+          </div>
         </div>
       </section>
 
-      <section className="space-y-3">
-        <h2 className="text-sm font-semibold text-slate-200">Meals</h2>
-        <div className="flex flex-col gap-2">
-          <textarea
-            className="flex-1 min-h-[60px]"
-            value={newMeal}
-            onChange={(e) => setNewMeal(e.target.value)}
-            placeholder="e.g. 200g Greek yogurt, 1 banana, 15g walnuts"
-          />
-          <div className="grid gap-2 sm:grid-cols-2">
+      <section className="space-y-3 rounded-2xl border border-indigo-900/70 bg-indigo-950/30 p-4">
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <h2 className="text-sm font-semibold text-slate-200">Meals</h2>
+          <p className="text-[11px] text-slate-500">Add throughout the day. Photos optional.</p>
+        </div>
+        <div className="flex flex-col gap-3">
+          <div className="rounded-xl border border-indigo-900/60 bg-slate-900/60 p-3 space-y-3">
             <div className="space-y-1">
-              <label className="text-xs text-slate-400">Insert preset into description</label>
-              <div className="flex flex-col sm:flex-row gap-2">
-                <select
-                  value={selectedPresetId}
-                  onChange={(e) => setSelectedPresetId(e.target.value)}
-                  className="flex-1"
-                >
-                  <option value="">Choose a preset</option>
-                  {savedPresets.map((p) => (
-                    <option key={p.id ?? p.key} value={String(p.id)}>
-                      {p.label} – {p.defaultCalories} kcal
-                    </option>
-                  ))}
-                </select>
-                <button
-                  type="button"
-                  onClick={insertPresetIntoMeal}
-                  className="text-xs px-3 py-2 rounded-md border border-slate-700 hover:border-indigo-500"
-                >
-                  Insert
-                </button>
+              <label className="text-xs text-slate-400">Meal description</label>
+              <textarea
+                className="w-full min-h-[100px]"
+                value={newMeal}
+                onChange={(e) => setNewMeal(e.target.value)}
+                placeholder="e.g. 200g Greek yogurt, 1 banana, 15g walnuts"
+              />
+            </div>
+            <div className="grid gap-2 sm:grid-cols-2">
+              <div className="space-y-1">
+                <label className="text-xs text-slate-400">Your calorie estimate (optional)</label>
+                <input
+                  type="number"
+                  value={manualCalories}
+                  onChange={(e) => setManualCalories(e.target.value)}
+                  placeholder="e.g. 420"
+                />
               </div>
-              <p className="text-[11px] text-slate-500">
-                Adds preset text with exact calories into the meal so AI treats it as certain.
-              </p>
+              <div className="space-y-1">
+                <label className="text-xs text-slate-400">Confidence (1–5)</label>
+                <select
+                  value={calorieConfidence}
+                  onChange={(e) => setCalorieConfidence(e.target.value)}
+                  disabled={!manualCalories.trim()}
+                >
+                  <option value="1">1 – Not confident</option>
+                  <option value="2">2</option>
+                  <option value="3">3 – Moderate</option>
+                  <option value="4">4</option>
+                  <option value="5">5 – Very confident</option>
+                </select>
+              </div>
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs text-slate-400">
+                Optional photo (stored locally; sent to AI for calorie estimation)
+              </label>
+              <div className="flex items-center gap-3 flex-wrap">
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) handlePhotoUpload(f, setMealPhotoDataUrl);
+                  }}
+                />
+                {mealPhotoDataUrl && (
+                  <button
+                    type="button"
+                    onClick={() => setMealPhotoDataUrl(null)}
+                    className="text-[11px] px-2 py-1 rounded-md border border-slate-700 text-slate-400 hover:border-red-500 hover:text-red-200"
+                  >
+                    Remove photo
+                  </button>
+                )}
+              </div>
+              {mealPhotoDataUrl && (
+                <img
+                  src={mealPhotoDataUrl}
+                  alt="Meal preview"
+                  className="max-h-40 rounded-lg border border-slate-800 object-cover"
+                />
+              )}
+            </div>
+            <div className="border-t border-slate-800 pt-2 space-y-2">
+              <details>
+                <summary className="text-xs text-slate-400 cursor-pointer">Insert preset into description</summary>
+                <div className="mt-2 space-y-1">
+                  <div className="flex flex-col sm:flex-row gap-2">
+                    <select
+                      value={selectedPresetId}
+                      onChange={(e) => setSelectedPresetId(e.target.value)}
+                      className="flex-1"
+                    >
+                      <option value="">Choose a preset</option>
+                      {savedPresets.map((p) => (
+                        <option key={p.id ?? p.key} value={String(p.id)}>
+                          {p.label} – {p.defaultCalories} kcal
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      onClick={insertPresetIntoMeal}
+                      className="text-xs px-3 py-2 rounded-md border border-slate-700 hover:border-indigo-500"
+                    >
+                      Insert
+                    </button>
+                  </div>
+                  <p className="text-[11px] text-slate-500">
+                    Adds preset text with exact calories into the meal so AI treats it as certain.
+                  </p>
+                </div>
+              </details>
+              <label className="flex items-center gap-2 text-xs text-slate-400">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4 rounded border-slate-600"
+                  checked={saveAsPreset}
+                  onChange={(e) => setSaveAsPreset(e.target.checked)}
+                />
+                Save this as a reusable preset
+              </label>
+              {saveAsPreset && (
+                <input
+                  type="text"
+                  className="text-xs w-full sm:w-56"
+                  placeholder="Preset name (e.g. Standard cappuccino)"
+                  value={presetName}
+                  onChange={(e) => setPresetName(e.target.value)}
+                />
+              )}
             </div>
           </div>
-          <div className="grid gap-2 sm:grid-cols-2">
-            <div className="space-y-1">
-              <label className="text-xs text-slate-400">Your calorie estimate (optional)</label>
-              <input
-                type="number"
-                value={manualCalories}
-                onChange={(e) => setManualCalories(e.target.value)}
-                placeholder="e.g. 420"
-              />
-            </div>
-            <div className="space-y-1">
-              <label className="text-xs text-slate-400">Confidence (1–5)</label>
-              <select
-                value={calorieConfidence}
-                onChange={(e) => setCalorieConfidence(e.target.value)}
-                disabled={!manualCalories.trim()}
-              >
-                <option value="1">1 – Not confident</option>
-                <option value="2">2</option>
-                <option value="3">3 – Moderate</option>
-                <option value="4">4</option>
-                <option value="5">5 – Very confident</option>
-              </select>
-            </div>
-          </div>
-          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
-            <label className="flex items-center gap-2 text-xs text-slate-400">
-              <input
-                type="checkbox"
-                className="h-4 w-4 rounded border-slate-600"
-                checked={saveAsPreset}
-                onChange={(e) => setSaveAsPreset(e.target.checked)}
-              />
-              Save this as a reusable preset
-            </label>
-            {saveAsPreset && (
-              <input
-                type="text"
-                className="text-xs w-full sm:w-56"
-                placeholder="Preset name (e.g. Standard cappuccino)"
-                value={presetName}
-                onChange={(e) => setPresetName(e.target.value)}
-              />
-            )}
+
+          <div className="flex justify-end">
             <button
               onClick={addMeal}
-              className="px-4 py-2 rounded-lg bg-indigo-500 hover:bg-indigo-600 text-sm self-stretch sm:self-auto"
+              className="px-4 py-2 rounded-lg bg-indigo-500 hover:bg-indigo-600 text-sm"
             >
               Add meal
             </button>
@@ -631,6 +701,13 @@ export const TodayPage: React.FC = () => {
                       />
                     ) : (
                       <div className="text-sm text-slate-100 whitespace-pre-wrap">{meal.description}</div>
+                    )}
+                    {!isEditing && meal.photoDataUrl && (
+                      <img
+                        src={meal.photoDataUrl}
+                        alt="Meal"
+                        className="mt-2 max-h-32 rounded-lg border border-slate-800 object-cover"
+                      />
                     )}
                     {!isEditing && calories != null && (
                       <div className="text-sm font-semibold text-indigo-100 mt-1">
@@ -667,6 +744,35 @@ export const TodayPage: React.FC = () => {
                 </div>
                 {isEditing ? (
                   <div className="space-y-2">
+                    <div className="space-y-1">
+                      <label className="text-[11px] text-slate-400">Photo (optional)</label>
+                      <div className="flex items-center gap-3 flex-wrap">
+                        <input
+                          type="file"
+                          accept="image/*"
+                          onChange={(e) => {
+                            const f = e.target.files?.[0];
+                            if (f) handlePhotoUpload(f, setEditPhotoDataUrl);
+                          }}
+                        />
+                        {editPhotoDataUrl && (
+                          <button
+                            type="button"
+                            onClick={() => setEditPhotoDataUrl(null)}
+                            className="text-[11px] px-2 py-1 rounded-md border border-slate-700 text-slate-400 hover:border-red-500 hover:text-red-200"
+                          >
+                            Remove photo
+                          </button>
+                        )}
+                      </div>
+                      {editPhotoDataUrl && (
+                        <img
+                          src={editPhotoDataUrl}
+                          alt="Meal preview"
+                          className="max-h-32 rounded-lg border border-slate-800 object-cover"
+                        />
+                      )}
+                    </div>
                     <div className="grid sm:grid-cols-3 gap-2">
                       <div className="space-y-1">
                         <label className="text-[11px] text-slate-400">Your estimate</label>
@@ -771,28 +877,31 @@ export const TodayPage: React.FC = () => {
         </div>
       </section>
 
-      <section className="space-y-3">
-        <h2 className="text-sm font-semibold text-slate-200">Symptoms</h2>
+      <section className="space-y-3 rounded-2xl border border-slate-800 bg-slate-900/40 p-4">
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <h2 className="text-sm font-semibold text-slate-200">Notes</h2>
+          <p className="text-[11px] text-slate-500">Log anything you notice throughout the day.</p>
+        </div>
         <div className="space-y-1">
           <label className="text-xs text-slate-400">Notes</label>
           <textarea
             className="w-full min-h-[60px]"
-            value={symptomNotes}
-            onChange={(e) => setSymptomNotes(e.target.value)}
+            value={noteText}
+            onChange={(e) => setNoteText(e.target.value)}
             placeholder="e.g. gassy in the evening, upper stomach pressure"
           />
         </div>
         <button
-          onClick={addSymptoms}
+          onClick={addNoteEntry}
           className="px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-sm"
         >
-          Add symptom entry
+          Add note
         </button>
         <div className="space-y-1">
-          {todayLog.symptoms.length === 0 && (
-            <p className="text-xs text-slate-500">No symptoms logged yet.</p>
+          {todayLog.notes.length === 0 && (
+            <p className="text-xs text-slate-500">No notes logged yet.</p>
           )}
-          {todayLog.symptoms.map((s) => (
+          {todayLog.notes.map((s) => (
             <div
               key={s.id}
               className="border border-slate-800 rounded-xl px-3 py-2 flex flex-col gap-1 text-xs text-slate-300"

@@ -10,9 +10,16 @@ function getApiKey() {
 
 const MODEL = "gpt-4.1-mini";
 
+type UserMessageContent =
+  | string
+  | Array<
+      | { type: "text"; text: string }
+      | { type: "image_url"; image_url: { url: string } }
+    >;
+
 async function callOpenAIChat(
   systemPrompt: string,
-  userContent: string,
+  userContent: UserMessageContent,
   opts: { jobId?: string } = {}
 ): Promise<string> {
   const apiKey = getApiKey();
@@ -57,6 +64,7 @@ async function callOpenAIChat(
 type MealEstimateContext = {
   userEstimate?: number;
   userConfidence?: number; // 1-5 self-rated confidence
+  photoDataUrl?: string;
 };
 
 type MealEstimateResult = {
@@ -71,17 +79,26 @@ export async function runMealCaloriesEstimation(
   opts: { jobId?: string } = {}
 ): Promise<MealEstimateResult> {
   const systemPrompt = [
-    "You are a nutrition assistant. Estimate total calories for a single meal description.",
+    "You are a nutrition assistant. Estimate total calories for a single meal from the provided description and/or photo.",
     "If the user provides their own estimate and confidence (1-5), treat it as a prior: stay near it when reasonable, adjust if clearly implausible.",
+    "Use the photo when present to refine the estimate.",
     "Respond with ONLY a JSON object like { \"calories\": 450, \"explanation\": \"Short reasoning\" }. Explanation should be one sentence.",
     "If you are unsure, give your best reasonable estimate."
   ].join(" ");
-  const user = JSON.stringify({
-    meal_description: description,
-    user_estimate: context.userEstimate,
-    user_confidence_1_to_5: context.userConfidence,
-  });
-  const content = await callOpenAIChat(systemPrompt, user, { jobId: opts.jobId });
+  const textBlock = [
+    description ? `Description: ${description}` : "No text description provided.",
+    `User estimate: ${context.userEstimate ?? "none"}`,
+    `User confidence (1-5): ${context.userConfidence ?? "not provided"}`,
+    context.photoDataUrl ? "Photo included below." : "No photo provided.",
+  ].join("\n");
+  const content = await callOpenAIChat(
+    systemPrompt,
+    [
+      { type: "text", text: textBlock },
+      ...(context.photoDataUrl ? [{ type: "image_url", image_url: { url: context.photoDataUrl } }] : []),
+    ],
+    { jobId: opts.jobId }
+  );
   try {
     const parsed = JSON.parse(content);
     const c = Number(parsed.calories);
@@ -120,7 +137,7 @@ export async function runDailyInsightIfNeeded(date: string, opts: { jobId?: stri
 
   const systemPrompt = [
     "You are a friendly nutrition and physiology coach.",
-    "Given the user's last ~2 weeks of food logs, symptoms, sleep, stress and weight,",
+    "Given the user's last ~2 weeks of food logs, notes, sleep, stress and weight,",
     "explain today's weight/bloating, identify patterns, and suggest 1-3 concrete actions for tomorrow.",
     "Respond ONLY as JSON with keys: weight_explanation, bloating_explanation, patterns, actions, caveats."
   ].join(" ");
