@@ -25,7 +25,6 @@ export type MealEntry = {
   llmCaloriesEstimate?: number;
   llmCaloriesExplanation?: string;
   finalCaloriesEstimate?: number; // editable final estimate, starts from llm estimate
-  confirmedCalories?: number;
   presetKey?: string;
   presetLabel?: string;
   wantsPreset?: boolean;

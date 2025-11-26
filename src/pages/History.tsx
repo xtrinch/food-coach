@@ -1,5 +1,5 @@
 import React from "react";
-import { useAllDailyLogs } from "../lib/db";
+import { db, useAllDailyLogs } from "../lib/db";
 
 export const HistoryPage: React.FC = () => {
   const { logs, loading } = useAllDailyLogs();
@@ -41,17 +41,50 @@ export const HistoryPage: React.FC = () => {
                 <div>
                   <div className="font-semibold text-slate-200 mb-1">Meals</div>
                   {log.meals.length === 0 && <div className="text-slate-500">No meals.</div>}
-                  {log.meals.map((m) => (
-                    <div key={m.id} className="flex justify-between gap-2">
-                      <span>{m.description}</span>
-                      <span className="text-[10px] text-slate-500">
-                        {new Date(m.timestamp).toLocaleTimeString([], {
-                          hour: "2-digit",
-                          minute: "2-digit",
-                        })}
-                      </span>
-                    </div>
-                  ))}
+                  {log.meals.map((m) => {
+                    const calories = m.finalCaloriesEstimate ?? m.llmCaloriesEstimate ?? m.userCaloriesEstimate;
+                    return (
+                      <div
+                        key={m.id}
+                        className="flex items-center justify-between gap-3 border border-slate-800 rounded-lg px-2 py-1"
+                      >
+                        <div className="flex items-center gap-2">
+                          {m.photoDataUrl && (
+                            <img
+                              src={m.photoDataUrl}
+                              alt="Meal"
+                              className="h-12 w-12 object-cover rounded-md border border-slate-800"
+                            />
+                          )}
+                          <div className="flex flex-col">
+                            <span className="text-slate-200 text-sm whitespace-pre-wrap">{m.description}</span>
+                            <div className="text-[11px] text-slate-500 flex gap-3">
+                              <span>
+                                {new Date(m.timestamp).toLocaleTimeString([], {
+                                  hour: "2-digit",
+                                  minute: "2-digit",
+                                })}
+                              </span>
+                              {calories != null && <span>Final: {calories} kcal</span>}
+                            </div>
+                          </div>
+                        </div>
+                        <button
+                          onClick={async () => {
+                            if (!confirm("Delete this meal from history?")) return;
+                            const updatedMeals = log.meals.filter((meal) => meal.id !== m.id);
+                            await db.dailyLogs.update(log.id, {
+                              meals: updatedMeals,
+                              updatedAt: new Date().toISOString(),
+                            });
+                          }}
+                          className="text-[11px] px-2 py-1 rounded-md border border-slate-700 text-slate-400 hover:border-red-500 hover:text-red-200"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    );
+                  })}
                 </div>
                 <div>
                   <div className="font-semibold text-slate-200 mb-1">Notes</div>

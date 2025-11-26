@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo, useState } from "react";
-import { db, useLiveTodayLog, normalizeFoodKey, useAllFoodPresets, MealEntry } from "../lib/db";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { db, useLiveTodayLog, normalizeFoodKey, useAllFoodPresets, MealEntry, getTodayId } from "../lib/db";
 import { useAnalysisJobs } from "../lib/analysisJobs";
 import { runDailyInsightIfNeeded, runMealCaloriesEstimation } from "../lib/openai";
 
@@ -24,6 +24,7 @@ export const TodayPage: React.FC = () => {
   const [editBusy, setEditBusy] = useState(false);
   const [mealPhotoDataUrl, setMealPhotoDataUrl] = useState<string | null>(null);
   const [editPhotoDataUrl, setEditPhotoDataUrl] = useState<string | null>(null);
+  const catchupStarted = useRef(false);
 
   const handlePhotoUpload = (file: File, setter: (data: string | null) => void) => {
     const reader = new FileReader();
@@ -79,6 +80,38 @@ export const TodayPage: React.FC = () => {
       updatedAt: new Date().toISOString(),
     });
   }, [todayLog]);
+
+  // Catch up a missed daily insight (e.g., yesterday) if one is absent.
+  useEffect(() => {
+    if (catchupStarted.current) return;
+    catchupStarted.current = true;
+    let cancelled = false;
+
+    (async () => {
+      const todayId = getTodayId();
+      const missing = await db.dailyLogs
+        .orderBy("date")
+        .filter((log) => !log.dailyInsightId && log.date < todayId)
+        .last();
+      if (!missing || cancelled) return;
+
+      const jobId = startJob({
+        type: "daily",
+        label: `Daily – ${missing.date} (catch-up)`,
+      });
+      try {
+        await runDailyInsightIfNeeded(missing.date, { jobId });
+        finishJob(jobId);
+      } catch (e) {
+        console.error(e);
+        failJob(jobId, (e as Error).message);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [startJob, finishJob, failJob]);
 
   if (loading || !todayLog) {
     return <div>Loading...</div>;
@@ -200,7 +233,6 @@ export const TodayPage: React.FC = () => {
         ...entryBase,
         llmCaloriesEstimate: existingPreset.defaultCalories,
         finalCaloriesEstimate: existingPreset.defaultCalories,
-        confirmedCalories: existingPreset.defaultCalories,
         presetLabel: existingPreset.label,
       };
       await db.dailyLogs.update(todayLog.id, {
@@ -399,44 +431,6 @@ export const TodayPage: React.FC = () => {
     setEditBusy(false);
   };
 
-  const confirmMealCalories = async (mealId: string, caloriesStr: string) => {
-    const calories = Number(caloriesStr);
-    const nowIso = new Date().toISOString();
-
-    const updatedMeals = todayLog.meals.map((m) =>
-      m.id === mealId ? { ...m, confirmedCalories: Number.isNaN(calories) ? undefined : calories } : m
-    );
-
-    await db.dailyLogs.update(todayLog.id, {
-      meals: updatedMeals,
-      updatedAt: nowIso,
-    });
-
-    const meal = updatedMeals.find((m) => m.id === mealId);
-    if (!meal || !meal.wantsPreset) return;
-    if (!calories || Number.isNaN(calories)) return;
-
-    const key = meal.presetKey ?? normalizeFoodKey(meal.description);
-    const label = meal.presetLabel || meal.description;
-
-    const existingPreset = await db.foodPresets.where("key").equals(key).first();
-    if (!existingPreset) {
-      await db.foodPresets.add({
-        key,
-        label,
-        defaultCalories: calories,
-        createdAt: nowIso,
-        updatedAt: nowIso,
-      });
-    } else {
-      await db.foodPresets.update(existingPreset.id!, {
-        defaultCalories: calories,
-        label,
-        updatedAt: nowIso,
-      });
-    }
-  };
-
   const deleteMeal = async (mealId: string) => {
     if (!confirm("Delete this meal?")) return;
     const updatedMeals = todayLog.meals.filter((m) => m.id !== mealId);
@@ -550,6 +544,17 @@ export const TodayPage: React.FC = () => {
         <div className="flex items-center justify-between flex-wrap gap-2">
           <h2 className="text-sm font-semibold text-slate-200">Meals</h2>
           <p className="text-[11px] text-slate-500">Add throughout the day. Photos optional.</p>
+        </div>
+        <div className="rounded-xl border border-slate-800 bg-slate-900/50 p-3 flex flex-wrap items-center gap-3 text-sm text-slate-200">
+          <div>
+            <span className="text-xs text-slate-400">Total estimated</span>
+            <div className="font-semibold">
+              {todayLog.meals
+                .map((m) => m.finalCaloriesEstimate ?? m.llmCaloriesEstimate ?? m.userCaloriesEstimate ?? 0)
+                .reduce((a, b) => a + (b ?? 0), 0)}{" "}
+              kcal
+            </div>
+          </div>
         </div>
         <div className="flex flex-col gap-3">
           <div className="rounded-xl border border-indigo-900/60 bg-slate-900/60 p-3 space-y-3">
@@ -683,8 +688,8 @@ export const TodayPage: React.FC = () => {
             <p className="text-xs text-slate-500">No meals logged yet.</p>
           )}
           {todayLog.meals.map((meal) => {
-            const finalCalories = meal.finalCaloriesEstimate ?? meal.llmCaloriesEstimate;
-            const calories = meal.confirmedCalories ?? finalCalories ?? meal.userCaloriesEstimate;
+            const finalCalories = meal.finalCaloriesEstimate ?? meal.llmCaloriesEstimate ?? meal.userCaloriesEstimate;
+            const calories = finalCalories;
             const isEditing = editingMealId === meal.id;
             return (
               <div
@@ -859,14 +864,6 @@ export const TodayPage: React.FC = () => {
                     {meal.llmCaloriesExplanation && (
                       <span className="text-[11px] text-slate-500">
                         Reason: {meal.llmCaloriesExplanation}
-                      </span>
-                    )}
-                    {meal.confirmedCalories != null && (
-                      <span>
-                        Confirmed:{" "}
-                        <span className="text-emerald-300 font-medium">
-                          {meal.confirmedCalories} kcal
-                        </span>
                       </span>
                     )}
                   </div>

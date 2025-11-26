@@ -41,12 +41,12 @@ export const Layout: React.FC<Props> = ({ children }) => {
       )}
       <header className="border-b border-slate-800 bg-slate-950/80 backdrop-blur-sm sticky top-0 z-10">
         <div className="max-w-4xl mx-auto flex items-center justify-between px-4 py-3">
-          <div className="flex items-center gap-2">
+          <NavLink to="/today" className="flex items-center gap-2 hover:opacity-90">
             <span className="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-indigo-500 text-sm font-bold">
               FC
             </span>
             <span className="font-semibold text-slate-100">Food Coach</span>
-          </div>
+          </NavLink>
           <nav className="flex items-center gap-4 text-sm">
             <NavLink
               to="/today"
