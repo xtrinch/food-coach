@@ -59,11 +59,11 @@ export const InsightsPage: React.FC = () => {
               key={insight.id ?? `${insight.date}-${insight.generatedAt}`}
               className="border border-slate-800 rounded-xl px-3 py-2 text-sm space-y-1"
             >
-              <div className="flex justify_between items-center">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                 <span className="font-medium text-slate-100">Daily – {insight.date}</span>
                 <button
                   onClick={() => rerunDaily(insight.date)}
-                  className="text-xs px-2 py-1 rounded-md border border-slate-700 hover:border-indigo-500"
+                  className="w-full sm:w-auto text-xs px-3 py-2 rounded-md border border-slate-700 hover:border-indigo-500"
                 >
                   Re-run
                 </button>
@@ -71,7 +71,15 @@ export const InsightsPage: React.FC = () => {
               <p className="text-xs text-slate-500">
                 Generated at {new Date(insight.generatedAt).toLocaleString()} · Model {insight.model}
               </p>
-              <pre className="mt-2 max-h-40 overflow-auto text-[10px] bg-slate-950/60 p-2 rounded-lg border border-slate-900">
+              {insight.prompt && (
+                <details className="text-[11px] text-slate-400">
+                  <summary className="cursor-pointer text-slate-300">Show prompt</summary>
+                  <pre className="mt-1 bg-slate-950/60 border border-slate-900 rounded-lg p-2 whitespace-pre-wrap text-[10px] text-slate-200">
+                    {insight.prompt}
+                  </pre>
+                </details>
+              )}
+              <pre className="mt-2 max-h-40 overflow-auto text-[10px] bg-slate-950/60 p-2 rounded-lg border border-slate-900 whitespace-pre-wrap break-words">
                 {insight.prettyText}
               </pre>
             </div>
@@ -87,11 +95,11 @@ export const InsightsPage: React.FC = () => {
         <div className="grid gap-3 sm:grid-cols-3">
           <div className="space-y-1">
             <label className="text-xs text-slate-400">From</label>
-            <input type="date" value={customFrom} onChange={(e) => setCustomFrom(e.target.value)} />
+            <input className="w-full" type="date" value={customFrom} onChange={(e) => setCustomFrom(e.target.value)} />
           </div>
           <div className="space-y-1">
             <label className="text-xs text-slate-400">To</label>
-            <input type="date" value={customTo} onChange={(e) => setCustomTo(e.target.value)} />
+            <input className="w-full" type="date" value={customTo} onChange={(e) => setCustomTo(e.target.value)} />
           </div>
           <div className="space-y-1 sm:col-span-3">
             <label className="text-xs text-slate-400">Focus (optional)</label>
@@ -105,7 +113,7 @@ export const InsightsPage: React.FC = () => {
         </div>
         <button
           onClick={runCustomAnalysis}
-          className="px-4 py-2 rounded-lg bg-indigo-500 hover:bg-indigo-600 text-sm"
+          className="w-full sm:w-auto px-4 py-2 rounded-lg bg-indigo-500 hover:bg-indigo-600 text-sm"
         >
           Run custom analysis
         </button>

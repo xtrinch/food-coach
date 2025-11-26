@@ -165,24 +165,6 @@ npx cap open android
 
 ---
 
-## 📌 Roadmap
-
-### Short-term
-- Weekly & monthly insights  
-- Custom analysis prompts  
-
-### Mid‑term
-- Google Drive sync  
-- Offline AI queue  
-- Charts  
-
-### Long‑term
-- Macro detection  
-- Photo-based meal recognition  
-- Portion scaling of presets  
-
----
-
 ## ❤️ Philosophy
 
 Food Coach is designed to be:

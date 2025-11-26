@@ -164,7 +164,7 @@ export async function runDailyInsightIfNeeded(
 
   const sanitizedLogs = logs.map((log) => ({
     ...log,
-    meals: log.meals.map(({ photoDataUrl, ...rest }) => rest),
+    meals: log.meals.map(({ photoDataUrl, ...rest }) => rest), // remove photos
   }));
 
   const payload = {
@@ -193,6 +193,7 @@ export async function runDailyInsightIfNeeded(
     model: MODEL,
     rawJson: content,
     prettyText: content,
+    prompt: `${systemPrompt}\n\nUser:\n${JSON.stringify(payload, null, 2)}`,
   };
 
   const id = await db.dailyInsights.add(insight);

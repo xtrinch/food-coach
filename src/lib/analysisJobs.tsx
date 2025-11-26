@@ -7,10 +7,12 @@ export type AnalysisJob = AnalysisJobRecord;
 
 type Ctx = {
   jobs: AnalysisJob[];
+  loading: boolean;
   startJob: (job: { type: AnalysisType; label: string }) => string;
   finishJob: (id: string) => void;
   failJob: (id: string, errorMessage: string) => void;
   dismissJob: (id: string) => void;
+  deleteJob: (id: string) => void;
 };
 
 const AnalysisJobsContext = createContext<Ctx | null>(null);
@@ -19,6 +21,7 @@ export const AnalysisJobsProvider: React.FC<{ children: React.ReactNode }> = ({ 
   const jobs = useLiveQuery(async () => {
     return db.analysisJobs.orderBy("startedAt").reverse().toArray();
   }, []);
+  const loading = !jobs;
 
   const startJob: Ctx["startJob"] = (job) => {
     const id = crypto.randomUUID();
@@ -55,8 +58,14 @@ export const AnalysisJobsProvider: React.FC<{ children: React.ReactNode }> = ({ 
     void db.analysisJobs.update(id, { dismissed: true }).catch((e) => console.error("Failed to dismiss job", e));
   };
 
+  const deleteJob: Ctx["deleteJob"] = (id) => {
+    void db.analysisJobs.delete(id).catch((e) => console.error("Failed to delete job", e));
+  };
+
   return (
-    <AnalysisJobsContext.Provider value={{ jobs: jobs ?? [], startJob, finishJob, failJob, dismissJob }}>
+    <AnalysisJobsContext.Provider
+      value={{ jobs: jobs ?? [], loading, startJob, finishJob, failJob, dismissJob, deleteJob }}
+    >
       {children}
     </AnalysisJobsContext.Provider>
   );

@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { ConfirmModal } from "../components/ConfirmModal";
 import { db, normalizeFoodKey, useAllFoodPresets } from "../lib/db";
 
 type EditingState = Record<number, { label: string; defaultCalories: string }>;
@@ -11,6 +12,9 @@ export const PresetsPage: React.FC = () => {
   const [newMatch, setNewMatch] = useState("");
   const [newLabel, setNewLabel] = useState("");
   const [newCalories, setNewCalories] = useState("");
+  const [pendingDeletePreset, setPendingDeletePreset] = useState<{ id: number; label: string } | null>(
+    null
+  );
 
   useEffect(() => {
     setEditing((prev) => {
@@ -42,10 +46,7 @@ export const PresetsPage: React.FC = () => {
     });
   }, [presets]);
 
-  const setError = (message: string) => {
-    alert(message);
-    setStatus({ type: "error", message });
-  };
+  const setError = (message: string) => setStatus({ type: "error", message });
   const setSuccess = (message: string) => setStatus({ type: "success", message });
 
   const persistPreset = async (id: number, data: { label: string; calories: number }) => {
@@ -80,8 +81,6 @@ export const PresetsPage: React.FC = () => {
   const deletePreset = async (id: number) => {
     const preset = presets.find((p) => p.id === id);
     if (!preset) return;
-    if (!confirm(`Delete preset "${preset.label}"? This will not remove past meals.`)) return;
-
     try {
       await db.foodPresets.delete(id);
       setEditing((prev) => {
@@ -161,6 +160,7 @@ export const PresetsPage: React.FC = () => {
             <label className="text-xs text-slate-400">Meal description (used to match future entries)</label>
             <input
               type="text"
+              className="w-full"
               value={newMatch}
               onChange={(e) => setNewMatch(e.target.value)}
               placeholder="e.g. Cappuccino with oat milk"
@@ -170,6 +170,7 @@ export const PresetsPage: React.FC = () => {
             <label className="text-xs text-slate-400">Default calories</label>
             <input
               type="number"
+              className="w-full"
               value={newCalories}
               onChange={(e) => setNewCalories(e.target.value)}
               placeholder="kcal"
@@ -179,6 +180,7 @@ export const PresetsPage: React.FC = () => {
             <label className="text-xs text-slate-400">Label (optional, shown in UI)</label>
             <input
               type="text"
+              className="w-full"
               value={newLabel}
               onChange={(e) => setNewLabel(e.target.value)}
               placeholder="e.g. Morning cappuccino"
@@ -187,14 +189,14 @@ export const PresetsPage: React.FC = () => {
         </div>
         <button
           onClick={addPreset}
-          className="px-4 py-2 rounded-lg bg-indigo-500 hover:bg-indigo-600 text-sm"
+          className="w-full sm:w-auto px-4 py-2 rounded-lg bg-indigo-500 hover:bg-indigo-600 text-sm"
         >
           Add preset
         </button>
       </section>
 
       <section className="space-y-3">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <h2 className="text-sm font-semibold text-slate-200">Your presets</h2>
           <span className="text-[11px] text-slate-500">Total: {presets.length}</span>
         </div>
@@ -216,7 +218,7 @@ export const PresetsPage: React.FC = () => {
                 key={preset.id}
                 className="border border-slate-800 rounded-xl px-3 py-3 space-y-3"
               >
-                <div className="flex items-start justify-between gap-3">
+                <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
                   <div className="space-y-1">
                     <div className="text-sm font-medium text-slate-100">{preset.label}</div>
                     <p className="text-[11px] text-slate-500">
@@ -224,8 +226,8 @@ export const PresetsPage: React.FC = () => {
                     </p>
                   </div>
                   <button
-                    onClick={() => deletePreset(preset.id!)}
-                    className="text-xs px-2 py-1 rounded-md border border-red-600 text-red-200 hover:bg-red-600/10"
+                    onClick={() => setPendingDeletePreset({ id: preset.id!, label: preset.label })}
+                    className="w-full sm:w-auto text-xs px-3 py-2 rounded-md border border-red-600 text-red-200 hover:bg-red-600/10"
                   >
                     Delete
                   </button>
@@ -236,6 +238,7 @@ export const PresetsPage: React.FC = () => {
                     <label className="text-xs text-slate-400">Label</label>
                     <input
                       type="text"
+                      className="w-full"
                       value={current.label}
                       onChange={(e) => updateField(preset.id!, "label", e.target.value)}
                       placeholder="e.g. Chicken salad bowl"
@@ -245,6 +248,7 @@ export const PresetsPage: React.FC = () => {
                     <label className="text-xs text-slate-400">Default calories</label>
                     <input
                       type="number"
+                      className="w-full"
                       value={current.defaultCalories}
                       onChange={(e) => updateField(preset.id!, "defaultCalories", e.target.value)}
                       placeholder="kcal"
@@ -257,6 +261,23 @@ export const PresetsPage: React.FC = () => {
           })}
         </div>
       </section>
+
+      <ConfirmModal
+        open={pendingDeletePreset !== null}
+        title="Delete preset?"
+        message={
+          pendingDeletePreset
+            ? `Delete preset "${pendingDeletePreset.label}"? This will not remove past meals.`
+            : ""
+        }
+        confirmLabel="Delete"
+        onConfirm={() => {
+          if (!pendingDeletePreset) return;
+          void deletePreset(pendingDeletePreset.id);
+          setPendingDeletePreset(null);
+        }}
+        onCancel={() => setPendingDeletePreset(null)}
+      />
     </div>
   );
 };

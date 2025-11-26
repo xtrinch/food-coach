@@ -65,6 +65,7 @@ export type DailyInsight = {
   model: string;
   rawJson: string;
   prettyText: string;
+  prompt?: string;
 };
 
 export type FoodPreset = {

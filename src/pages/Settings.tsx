@@ -106,13 +106,14 @@ export const SettingsPage: React.FC = () => {
         </p>
         <input
           type="password"
+          className="w-full sm:w-80"
           value={apiKey}
           onChange={(e) => setApiKey(e.target.value)}
           placeholder="sk-..."
         />
         <button
           onClick={saveKey}
-          className="px-4 py-2 rounded-lg bg-indigo-500 hover:bg-indigo-600 text-sm"
+          className="w-full sm:w-auto px-4 py-2 rounded-lg bg-indigo-500 hover:bg-indigo-600 text-sm"
         >
           Save API key
         </button>
@@ -131,14 +132,14 @@ export const SettingsPage: React.FC = () => {
           <button
             onClick={runDriveSync}
             disabled={driveBusy}
-            className="px-3 py-2 rounded-lg bg-indigo-500 hover:bg-indigo-600 disabled:opacity-60 text-xs"
+            className="w-full sm:w-auto px-3 py-2 rounded-lg bg-indigo-500 hover:bg-indigo-600 disabled:opacity-60 text-xs"
           >
             {driveBusy ? "Syncing…" : "Sync to Drive"}
           </button>
           <button
             onClick={importFromDrive}
             disabled={driveBusy}
-            className="px-3 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 disabled:opacity-60 text-xs"
+            className="w-full sm:w-auto px-3 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 disabled:opacity-60 text-xs"
           >
             {driveBusy ? "Working…" : "Import latest from Drive"}
           </button>
@@ -156,7 +157,7 @@ export const SettingsPage: React.FC = () => {
         </p>
         <button
           onClick={exportData}
-          className="px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-sm"
+          className="w-full sm:w-auto px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-sm"
         >
           Export JSON backup
         </button>
@@ -166,7 +167,7 @@ export const SettingsPage: React.FC = () => {
         <h2 className="text-sm font-semibold text-red-300">Danger zone</h2>
         <button
           onClick={clearAllData}
-          className="px-4 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-sm"
+          className="w-full sm:w-auto px-4 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-sm"
         >
           Clear all local data
         </button>

@@ -27,6 +27,7 @@ export const TodayPage: React.FC = () => {
   const [editPhotoDataUrl, setEditPhotoDataUrl] = useState<string | null>(null);
   const catchupStarted = useRef(false);
   const [pendingDeleteMealId, setPendingDeleteMealId] = useState<string | null>(null);
+  const [basicsOpenMobile, setBasicsOpenMobile] = useState(false);
   const macroStatus = (type: "protein" | "carbs" | "fat", grams: number, totalKcal: number) => {
     const kcalFromMacro = grams * (type === "fat" ? 9 : 4);
     const pct = totalKcal > 0 ? (kcalFromMacro / totalKcal) * 100 : 0;
@@ -505,7 +506,7 @@ export const TodayPage: React.FC = () => {
         <button
           onClick={runManualDailyAnalysis}
           disabled={manualInsightRunning}
-          className="text-xs px-3 py-2 rounded-md border border-slate-700 hover:border-indigo-500 disabled:opacity-60"
+          className="w-full sm:w-auto text-xs px-3 py-2 rounded-md border border-slate-700 hover:border-indigo-500 disabled:opacity-60"
         >
           {manualInsightRunning ? "Running daily analysis..." : "Run daily analysis now"}
         </button>
@@ -513,10 +514,24 @@ export const TodayPage: React.FC = () => {
 
       <section className="space-y-3 rounded-2xl border border-slate-800 bg-slate-900/40 p-4">
         <div className="flex items-center justify-between flex-wrap gap-2">
-          <h2 className="text-sm font-semibold text-slate-200">Daily basics</h2>
-          <p className="text-[11px] text-slate-500">Once per day: weight, sleep, stress, bloating, energy.</p>
+          <div className="space-y-1">
+            <h2 className="text-sm font-semibold text-slate-200">Daily basics</h2>
+            <p className="text-[11px] text-slate-500">Once per day: weight, sleep, stress, bloating, energy.</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setBasicsOpenMobile((prev) => !prev)}
+            className="sm:hidden text-[11px] px-3 py-2 rounded-md border border-slate-700 text-slate-300 hover:border-indigo-500"
+            aria-expanded={basicsOpenMobile}
+            aria-controls="daily-basics-grid"
+          >
+            {basicsOpenMobile ? "Hide basics" : "Show basics"}
+          </button>
         </div>
-        <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5">
+        <div
+          id="daily-basics-grid"
+          className={`${basicsOpenMobile ? "grid" : "hidden"} sm:grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5`}
+        >
           <div className="space-y-1">
             <label className="text-xs font-medium text-slate-400">Weight (kg)</label>
             <input
@@ -594,7 +609,7 @@ export const TodayPage: React.FC = () => {
           <h2 className="text-sm font-semibold text-slate-200">Meals</h2>
           <p className="text-[11px] text-slate-500">Add throughout the day. Photos optional.</p>
         </div>
-        <div className="rounded-xl border border-slate-800 bg-slate-900/50 p-3 flex flex-wrap items-center gap-3 text-sm text-slate-200">
+        <div className="rounded-xl border border-slate-800 bg-slate-900/50 p-3 grid gap-3 text-sm text-slate-200 sm:grid-cols-2 lg:grid-cols-3">
           {(() => {
             const totalProtein = todayLog.meals
               .map((m) => m.finalProteinGrams ?? m.llmProteinGrams ?? 0)
@@ -613,13 +628,13 @@ export const TodayPage: React.FC = () => {
             const fatStatus = macroStatus("fat", totalFat, totalKcal);
             return (
               <>
-                <div>
+                <div className="space-y-0.5">
                   <span className="text-xs text-slate-400">Total estimated</span>
                   <div className="font-semibold">{totalKcal} kcal</div>
                 </div>
-                <div className="flex flex-col text-xs text-slate-400">
+                <div className="space-y-1 text-xs text-slate-400">
                   <span>Macros (grams)</span>
-                  <div className="text-sm text-slate-200 font-semibold flex gap-4">
+                  <div className="text-sm text-slate-200 font-semibold flex flex-wrap gap-3">
                     <span className={proteinStatus.color}>
                       Protein: {totalProtein} g
                     </span>
@@ -631,7 +646,7 @@ export const TodayPage: React.FC = () => {
                     </span>
                   </div>
                 </div>
-                <div className="flex items-center gap-2 text-[10px] text-slate-500">
+                <div className="flex flex-wrap items-center gap-2 text-[10px] text-slate-500">
                   <span>Legend:</span>
                   <span className="inline-flex items-center gap-1">
                     <span className="inline-block h-2 w-4 rounded bg-sky-300" />
@@ -661,39 +676,42 @@ export const TodayPage: React.FC = () => {
                 placeholder="e.g. 200g Greek yogurt, 1 banana, 15g walnuts"
               />
             </div>
-            <div className="grid gap-2 sm:grid-cols-2">
-            <div className="space-y-1">
-              <label className="text-xs text-slate-400">Your calorie estimate (optional)</label>
-              <input
-                type="number"
-                value={manualCalories}
-                onChange={(e) => setManualCalories(e.target.value)}
-                placeholder="e.g. 420"
-              />
-            </div>
-            <div className="space-y-1">
-              <label className="text-xs text-slate-400">Confidence (1–5)</label>
-              <select
-                value={calorieConfidence}
-                onChange={(e) => setCalorieConfidence(e.target.value)}
-                disabled={!manualCalories.trim()}
-              >
-                <option value="1">1 – Not confident</option>
-                <option value="2">2</option>
-                <option value="3">3 – Moderate</option>
-                <option value="4">4</option>
-                <option value="5">5 – Very confident</option>
-              </select>
-            </div>
+            <div className="flex flex-wrap gap-2">
+              <div className="space-y-1 min-w-[150px] flex-1">
+                <label className="text-xs text-slate-400">Kcal estimate (optional)</label>
+                <input
+                  type="number"
+                  className="w-full"
+                  value={manualCalories}
+                  onChange={(e) => setManualCalories(e.target.value)}
+                  placeholder="e.g. 420"
+                />
+              </div>
+              <div className="space-y-1 min-w-[150px] flex-1">
+                <label className="text-xs text-slate-400">Confidence (1–5)</label>
+                <select
+                  className="w-full"
+                  value={calorieConfidence}
+                  onChange={(e) => setCalorieConfidence(e.target.value)}
+                  disabled={!manualCalories.trim()}
+                >
+                  <option value="1">1 – Not confident</option>
+                  <option value="2">2</option>
+                  <option value="3">3 – Moderate</option>
+                  <option value="4">4</option>
+                  <option value="5">5 – Very confident</option>
+                </select>
+              </div>
             </div>
             <div className="space-y-1">
               <label className="text-xs text-slate-400">
                 Optional photo (stored locally; sent to AI for calorie estimation)
               </label>
-              <div className="flex items-center gap-3 flex-wrap">
+              <div className="flex items-start gap-3 flex-wrap w-full sm:flex-nowrap">
                 <input
                   type="file"
                   accept="image/*"
+                  className="w-full sm:w-auto max-w-full text-xs sm:text-sm file:mr-2 file:rounded-md file:border-0 file:bg-slate-700 file:px-3 file:py-1.5 file:text-xs sm:file:text-sm file:text-slate-50"
                   onChange={(e) => {
                     const f = e.target.files?.[0];
                     if (f) handlePhotoUpload(f, setMealPhotoDataUrl);
@@ -703,7 +721,7 @@ export const TodayPage: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => setMealPhotoDataUrl(null)}
-                    className="text-[11px] px-2 py-1 rounded-md border border-slate-700 text-slate-400 hover:border-red-500 hover:text-red-200"
+                    className="text-xs px-3 py-2 rounded-md border border-slate-700 text-slate-300 hover:border-red-500 hover:text-red-200"
                   >
                     Remove photo
                   </button>
@@ -725,7 +743,7 @@ export const TodayPage: React.FC = () => {
                     <select
                       value={selectedPresetId}
                       onChange={(e) => setSelectedPresetId(e.target.value)}
-                      className="flex-1"
+                      className="flex-1 w-full"
                     >
                       <option value="">Choose a preset</option>
                       {savedPresets.map((p) => (
@@ -737,7 +755,7 @@ export const TodayPage: React.FC = () => {
                     <button
                       type="button"
                       onClick={insertPresetIntoMeal}
-                      className="text-xs px-3 py-2 rounded-md border border-slate-700 hover:border-indigo-500"
+                      className="text-xs w-full sm:w-auto px-3 py-2 rounded-md border border-slate-700 hover:border-indigo-500"
                     >
                       Insert
                     </button>
@@ -771,7 +789,7 @@ export const TodayPage: React.FC = () => {
           <div className="flex justify-end">
             <button
               onClick={addMeal}
-              className="px-4 py-2 rounded-lg bg-indigo-500 hover:bg-indigo-600 text-sm"
+              className="w-full sm:w-auto px-4 py-2 rounded-lg bg-indigo-500 hover:bg-indigo-600 text-sm"
             >
               Add meal
             </button>
@@ -787,7 +805,7 @@ export const TodayPage: React.FC = () => {
             const isEditing = editingMealId === meal.id;
             return (
               <div key={meal.id} className="border border-slate-800 rounded-xl px-3 py-2 flex flex-col gap-2 bg-slate-900/50">
-                <div className="flex justify-between items-start gap-3">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                   <div className="flex-1">
                     {isEditing ? (
                       <textarea
@@ -853,28 +871,28 @@ export const TodayPage: React.FC = () => {
                       </div>
                     )}
                   </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-[10px] text-slate-500">
+                  <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-400 w-full sm:w-auto sm:justify-end">
+                    <span className="text-[10px] text-slate-500 sm:text-right w-full sm:w-auto">
                       {new Date(meal.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
                     </span>
                     {isEditing ? (
                       <button
                         onClick={cancelEditingMeal}
-                        className="text-[11px] px-2 py-1 rounded-md border border-slate-700 text-slate-400 hover:border-slate-500"
+                        className="text-xs px-3 py-2 rounded-md border border-slate-700 text-slate-300 hover:border-slate-500"
                       >
                         Cancel
                       </button>
                     ) : (
                       <button
                         onClick={() => startEditingMeal(meal)}
-                        className="text-[11px] px-2 py-1 rounded-md border border-slate-700 text-slate-400 hover:border-indigo-400"
+                        className="text-xs px-3 py-2 rounded-md border border-slate-700 text-slate-300 hover:border-indigo-400"
                       >
                         Edit
                       </button>
                     )}
                     <button
                       onClick={() => setPendingDeleteMealId(meal.id)}
-                      className="text-[11px] px-2 py-1 rounded-md border border-slate-700 text-slate-400 hover:border-red-500 hover:text-red-200"
+                      className="text-xs px-3 py-2 rounded-md border border-slate-700 text-slate-300 hover:border-red-500 hover:text-red-200"
                     >
                       Delete
                     </button>
@@ -884,10 +902,11 @@ export const TodayPage: React.FC = () => {
                   <div className="space-y-2">
                     <div className="space-y-1">
                       <label className="text-[11px] text-slate-400">Photo (optional)</label>
-                      <div className="flex items-center gap-3 flex-wrap">
+                      <div className="flex items-start gap-3 flex-wrap w-full sm:flex-nowrap">
                         <input
                           type="file"
                           accept="image/*"
+                          className="w-full sm:w-auto max-w-full text-xs sm:text-sm file:mr-2 file:rounded-md file:border-0 file:bg-slate-700 file:px-3 file:py-1.5 file:text-xs sm:file:text-sm file:text-slate-50"
                           onChange={(e) => {
                             const f = e.target.files?.[0];
                             if (f) handlePhotoUpload(f, setEditPhotoDataUrl);
@@ -897,7 +916,7 @@ export const TodayPage: React.FC = () => {
                           <button
                             type="button"
                             onClick={() => setEditPhotoDataUrl(null)}
-                            className="text-[11px] px-2 py-1 rounded-md border border-slate-700 text-slate-400 hover:border-red-500 hover:text-red-200"
+                            className="text-xs px-3 py-2 rounded-md border border-slate-700 text-slate-300 hover:border-red-500 hover:text-red-200"
                           >
                             Remove photo
                           </button>
@@ -916,6 +935,7 @@ export const TodayPage: React.FC = () => {
                         <label className="text-[11px] text-slate-400">Your estimate</label>
                         <input
                           type="number"
+                          className="w-full"
                           value={editUserCalories}
                           onChange={(e) => setEditUserCalories(e.target.value)}
                           placeholder="e.g. 420"
@@ -923,7 +943,7 @@ export const TodayPage: React.FC = () => {
                       </div>
                       <div className="space-y-1">
                         <label className="text-[11px] text-slate-400">Confidence (1–5)</label>
-                        <select value={editConfidence} onChange={(e) => setEditConfidence(e.target.value)}>
+                        <select className="w-full" value={editConfidence} onChange={(e) => setEditConfidence(e.target.value)}>
                           <option value="">Not set</option>
                           <option value="1">1</option>
                           <option value="2">2</option>
@@ -936,6 +956,7 @@ export const TodayPage: React.FC = () => {
                         <label className="text-[11px] text-slate-400">Final estimate (editable)</label>
                         <input
                           type="number"
+                          className="w-full"
                           value={editFinalCalories}
                           onChange={(e) => setEditFinalCalories(e.target.value)}
                           placeholder="e.g. 480"
@@ -946,24 +967,24 @@ export const TodayPage: React.FC = () => {
                       Editing the description, your estimate, or confidence will re-run the LLM and reset the final
                       estimate to the new LLM result.
                     </p>
-                    <div className="flex gap-2">
+                    <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
                       <button
                         onClick={saveMealEdits}
                         disabled={editBusy}
-                        className="text-xs px-3 py-2 rounded-md bg-indigo-500 hover:bg-indigo-600 disabled:opacity-60"
+                        className="w-full sm:w-auto text-xs px-3 py-2 rounded-md bg-indigo-500 hover:bg-indigo-600 disabled:opacity-60"
                       >
                         {editBusy ? "Saving..." : "Save meal"}
                       </button>
                       <button
                         onClick={cancelEditingMeal}
-                        className="text-xs px-3 py-2 rounded-md border border-slate-700 hover:border-slate-500 text-slate-300"
+                        className="w-full sm:w-auto text-xs px-3 py-2 rounded-md border border-slate-700 hover:border-slate-500 text-slate-300"
                       >
                         Cancel
                       </button>
                     </div>
                   </div>
                 ) : (
-                  <div className="flex items-center justify-end">
+                  <div className="flex items-center justify-start sm:justify-end">
                     {meal.photoDataUrl && (
                       <img
                         src={meal.photoDataUrl}
@@ -1008,7 +1029,7 @@ export const TodayPage: React.FC = () => {
         </div>
         <button
           onClick={addNoteEntry}
-          className="px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-sm"
+          className="w-full sm:w-auto px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-sm"
         >
           Add note
         </button>
