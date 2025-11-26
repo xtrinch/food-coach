@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { db, useLiveTodayLog, normalizeFoodKey, useAllFoodPresets, MealEntry, getTodayId } from "../lib/db";
 import { useAnalysisJobs } from "../lib/analysisJobs";
 import { runDailyInsightIfNeeded, runMealCaloriesEstimation } from "../lib/openai";
+import { ConfirmModal } from "../components/ConfirmModal";
 
 export const TodayPage: React.FC = () => {
   const { todayLog, loading } = useLiveTodayLog();
@@ -25,6 +26,25 @@ export const TodayPage: React.FC = () => {
   const [mealPhotoDataUrl, setMealPhotoDataUrl] = useState<string | null>(null);
   const [editPhotoDataUrl, setEditPhotoDataUrl] = useState<string | null>(null);
   const catchupStarted = useRef(false);
+  const [pendingDeleteMealId, setPendingDeleteMealId] = useState<string | null>(null);
+  const macroStatus = (type: "protein" | "carbs" | "fat", grams: number, totalKcal: number) => {
+    const kcalFromMacro = grams * (type === "fat" ? 9 : 4);
+    const pct = totalKcal > 0 ? (kcalFromMacro / totalKcal) * 100 : 0;
+    // Rough guide ranges (based on general dietary splits)
+    if (type === "protein") {
+      if (pct < 10) return { label: "Low", color: "text-sky-300" };
+      if (pct > 35) return { label: "High", color: "text-red-300" };
+      return { label: "OK", color: "text-emerald-300" };
+    }
+    if (type === "carbs") {
+      if (pct < 40) return { label: "Low", color: "text-sky-300" };
+      if (pct > 60) return { label: "High", color: "text-red-300" };
+      return { label: "OK", color: "text-emerald-300" };
+    }
+    if (pct < 20) return { label: "Low", color: "text-sky-300" };
+    if (pct > 35) return { label: "High", color: "text-red-300" };
+    return { label: "OK", color: "text-emerald-300" };
+  };
 
   const handlePhotoUpload = (file: File, setter: (data: string | null) => void) => {
     const reader = new FileReader();
@@ -54,17 +74,17 @@ export const TodayPage: React.FC = () => {
     const hour = now.getHours();
     if (hour >= 22 && !todayLog.dailyInsightId) {
       (async () => {
-        const jobId = startJob({
-          type: "daily",
-          label: `Daily – ${todayLog.date}`,
-        });
-        try {
-          await runDailyInsightIfNeeded(todayLog.date, { jobId });
-          finishJob(jobId);
-        } catch (e) {
-          console.error(e);
-          failJob(jobId, (e as Error).message);
-        }
+      const jobId = startJob({
+        type: "daily",
+        label: `Daily – ${todayLog.date}`,
+      });
+      try {
+        await runDailyInsightIfNeeded(todayLog.date, { jobId });
+        finishJob(jobId);
+      } catch (e) {
+        console.error(e);
+        failJob(jobId, (e as Error).message);
+      }
       })();
     }
   }, [now, todayLog, isToday, startJob, finishJob, failJob]);
@@ -157,6 +177,14 @@ export const TodayPage: React.FC = () => {
     });
   };
 
+  const handleExerciseChange = async (value: string) => {
+    const hrs = value ? Number(value) : undefined;
+    await db.dailyLogs.update(todayLog.id, {
+      exerciseHours: Number.isNaN(hrs) ? undefined : hrs,
+      updatedAt: new Date().toISOString(),
+    });
+  };
+
   const resetMealForm = () => {
     setNewMeal("");
     setPresetName("");
@@ -192,7 +220,7 @@ export const TodayPage: React.FC = () => {
     try {
       const existing = await db.dailyInsights.where("date").equals(todayLog.date).toArray();
       await Promise.all(existing.map((i) => db.dailyInsights.delete(String(i.id))));
-      await runDailyInsightIfNeeded(todayLog.date, { jobId });
+      await runDailyInsightIfNeeded(todayLog.date, { jobId, force: true });
       finishJob(jobId);
     } catch (e) {
       console.error(e);
@@ -262,7 +290,7 @@ export const TodayPage: React.FC = () => {
       label: `Calories – ${description.slice(0, 24)}`,
     });
     try {
-      const { calories, explanation } = await runMealCaloriesEstimation(
+      const { calories, explanation, proteinGrams, carbsGrams, fatGrams } = await runMealCaloriesEstimation(
         description,
         {
           userEstimate: hasManualCalories ? manualCaloriesValue : undefined,
@@ -279,6 +307,12 @@ export const TodayPage: React.FC = () => {
               llmCaloriesEstimate: calories,
               llmCaloriesExplanation: explanation,
               finalCaloriesEstimate: calories,
+              llmProteinGrams: proteinGrams,
+              llmCarbsGrams: carbsGrams,
+              llmFatGrams: fatGrams,
+              finalProteinGrams: proteinGrams,
+              finalCarbsGrams: carbsGrams,
+              finalFatGrams: fatGrams,
             }
           : m
       );
@@ -325,8 +359,7 @@ export const TodayPage: React.FC = () => {
     const initialFinal =
       meal.finalCaloriesEstimate ??
       meal.llmCaloriesEstimate ??
-      meal.userCaloriesEstimate ??
-      meal.confirmedCalories;
+      meal.userCaloriesEstimate
     setEditFinalCalories(initialFinal != null ? String(initialFinal) : "");
     setEditPhotoDataUrl(meal.photoDataUrl ?? null);
   };
@@ -396,7 +429,7 @@ export const TodayPage: React.FC = () => {
         label: `Calories – ${description.slice(0, 24)}`,
       });
       try {
-        const { calories, explanation } = await runMealCaloriesEstimation(
+        const { calories, explanation, proteinGrams, carbsGrams, fatGrams } = await runMealCaloriesEstimation(
           description,
           {
             userEstimate,
@@ -413,6 +446,12 @@ export const TodayPage: React.FC = () => {
                 llmCaloriesEstimate: calories,
                 llmCaloriesExplanation: explanation,
                 finalCaloriesEstimate: calories,
+                llmProteinGrams: proteinGrams,
+                llmCarbsGrams: carbsGrams,
+                llmFatGrams: fatGrams,
+                finalProteinGrams: proteinGrams,
+                finalCarbsGrams: carbsGrams,
+                finalFatGrams: fatGrams,
               }
             : m
         );
@@ -432,7 +471,6 @@ export const TodayPage: React.FC = () => {
   };
 
   const deleteMeal = async (mealId: string) => {
-    if (!confirm("Delete this meal?")) return;
     const updatedMeals = todayLog.meals.filter((m) => m.id !== mealId);
     await db.dailyLogs.update(todayLog.id, {
       meals: updatedMeals,
@@ -537,6 +575,17 @@ export const TodayPage: React.FC = () => {
               onChange={(e) => handleEnergyChange(e.target.value)}
             />
           </div>
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-slate-400">Exercise (hours)</label>
+            <input
+              type="number"
+              step="0.1"
+              min={0}
+              className="w-full"
+              value={todayLog.exerciseHours ?? ""}
+              onChange={(e) => handleExerciseChange(e.target.value)}
+            />
+          </div>
         </div>
       </section>
 
@@ -546,18 +595,63 @@ export const TodayPage: React.FC = () => {
           <p className="text-[11px] text-slate-500">Add throughout the day. Photos optional.</p>
         </div>
         <div className="rounded-xl border border-slate-800 bg-slate-900/50 p-3 flex flex-wrap items-center gap-3 text-sm text-slate-200">
-          <div>
-            <span className="text-xs text-slate-400">Total estimated</span>
-            <div className="font-semibold">
-              {todayLog.meals
-                .map((m) => m.finalCaloriesEstimate ?? m.llmCaloriesEstimate ?? m.userCaloriesEstimate ?? 0)
-                .reduce((a, b) => a + (b ?? 0), 0)}{" "}
-              kcal
-            </div>
-          </div>
+          {(() => {
+            const totalProtein = todayLog.meals
+              .map((m) => m.finalProteinGrams ?? m.llmProteinGrams ?? 0)
+              .reduce((a, b) => a + (b ?? 0), 0);
+            const totalCarbs = todayLog.meals
+              .map((m) => m.finalCarbsGrams ?? m.llmCarbsGrams ?? 0)
+              .reduce((a, b) => a + (b ?? 0), 0);
+            const totalFat = todayLog.meals
+              .map((m) => m.finalFatGrams ?? m.llmFatGrams ?? 0)
+              .reduce((a, b) => a + (b ?? 0), 0);
+            const totalKcal = todayLog.meals
+              .map((m) => m.finalCaloriesEstimate ?? m.llmCaloriesEstimate ?? m.userCaloriesEstimate ?? 0)
+              .reduce((a, b) => a + (b ?? 0), 0);
+            const proteinStatus = macroStatus("protein", totalProtein, totalKcal);
+            const carbStatus = macroStatus("carbs", totalCarbs, totalKcal);
+            const fatStatus = macroStatus("fat", totalFat, totalKcal);
+            return (
+              <>
+                <div>
+                  <span className="text-xs text-slate-400">Total estimated</span>
+                  <div className="font-semibold">{totalKcal} kcal</div>
+                </div>
+                <div className="flex flex-col text-xs text-slate-400">
+                  <span>Macros (grams)</span>
+                  <div className="text-sm text-slate-200 font-semibold flex gap-4">
+                    <span className={proteinStatus.color}>
+                      Protein: {totalProtein} g
+                    </span>
+                    <span className={carbStatus.color}>
+                      Carbs: {totalCarbs} g
+                    </span>
+                    <span className={fatStatus.color}>
+                      Fat: {totalFat} g
+                    </span>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 text-[10px] text-slate-500">
+                  <span>Legend:</span>
+                  <span className="inline-flex items-center gap-1">
+                    <span className="inline-block h-2 w-4 rounded bg-sky-300" />
+                    <span>Low</span>
+                  </span>
+                  <span className="inline-flex items-center gap-1">
+                    <span className="inline-block h-2 w-4 rounded bg-emerald-300" />
+                    <span>OK</span>
+                  </span>
+                  <span className="inline-flex items-center gap-1">
+                    <span className="inline-block h-2 w-4 rounded bg-red-300" />
+                    <span>High</span>
+                  </span>
+                </div>
+              </>
+            );
+          })()}
         </div>
         <div className="flex flex-col gap-3">
-          <div className="rounded-xl border border-indigo-900/60 bg-slate-900/60 p-3 space-y-3">
+          <div className="rounded-xl border border-indigo-900/60 bg-slate-900/50 p-3 space-y-3">
             <div className="space-y-1">
               <label className="text-xs text-slate-400">Meal description</label>
               <textarea
@@ -568,29 +662,29 @@ export const TodayPage: React.FC = () => {
               />
             </div>
             <div className="grid gap-2 sm:grid-cols-2">
-              <div className="space-y-1">
-                <label className="text-xs text-slate-400">Your calorie estimate (optional)</label>
-                <input
-                  type="number"
-                  value={manualCalories}
-                  onChange={(e) => setManualCalories(e.target.value)}
-                  placeholder="e.g. 420"
-                />
-              </div>
-              <div className="space-y-1">
-                <label className="text-xs text-slate-400">Confidence (1–5)</label>
-                <select
-                  value={calorieConfidence}
-                  onChange={(e) => setCalorieConfidence(e.target.value)}
-                  disabled={!manualCalories.trim()}
-                >
-                  <option value="1">1 – Not confident</option>
-                  <option value="2">2</option>
-                  <option value="3">3 – Moderate</option>
-                  <option value="4">4</option>
-                  <option value="5">5 – Very confident</option>
-                </select>
-              </div>
+            <div className="space-y-1">
+              <label className="text-xs text-slate-400">Your calorie estimate (optional)</label>
+              <input
+                type="number"
+                value={manualCalories}
+                onChange={(e) => setManualCalories(e.target.value)}
+                placeholder="e.g. 420"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs text-slate-400">Confidence (1–5)</label>
+              <select
+                value={calorieConfidence}
+                onChange={(e) => setCalorieConfidence(e.target.value)}
+                disabled={!manualCalories.trim()}
+              >
+                <option value="1">1 – Not confident</option>
+                <option value="2">2</option>
+                <option value="3">3 – Moderate</option>
+                <option value="4">4</option>
+                <option value="5">5 – Very confident</option>
+              </select>
+            </div>
             </div>
             <div className="space-y-1">
               <label className="text-xs text-slate-400">
@@ -692,10 +786,7 @@ export const TodayPage: React.FC = () => {
             const calories = finalCalories;
             const isEditing = editingMealId === meal.id;
             return (
-              <div
-                key={meal.id}
-                className="border border-slate-800 rounded-xl px-3 py-2 flex flex-col gap-1"
-              >
+              <div key={meal.id} className="border border-slate-800 rounded-xl px-3 py-2 flex flex-col gap-2 bg-slate-900/50">
                 <div className="flex justify-between items-start gap-3">
                   <div className="flex-1">
                     {isEditing ? (
@@ -707,16 +798,58 @@ export const TodayPage: React.FC = () => {
                     ) : (
                       <div className="text-sm text-slate-100 whitespace-pre-wrap">{meal.description}</div>
                     )}
-                    {!isEditing && meal.photoDataUrl && (
-                      <img
-                        src={meal.photoDataUrl}
-                        alt="Meal"
-                        className="mt-2 max-h-32 rounded-lg border border-slate-800 object-cover"
-                      />
-                    )}
                     {!isEditing && calories != null && (
                       <div className="text-sm font-semibold text-indigo-100 mt-1">
                         Final estimate: {calories} kcal
+                      </div>
+                    )}
+                    {!isEditing && (
+                      <div className="flex flex-wrap items-center gap-2 text-xs text-slate-400 mt-1">
+                        {meal.presetLabel && (
+                          <span className="text-emerald-400">
+                            Preset: {meal.presetLabel}
+                          </span>
+                        )}
+                        {meal.userCaloriesEstimate != null && (
+                          <span>
+                            Your estimate:{" "}
+                            <span className="text-amber-300 font-medium">
+                              {meal.userCaloriesEstimate} kcal
+                            </span>
+                            {meal.userCaloriesConfidence ? ` (${meal.userCaloriesConfidence}/5 confidence)` : ""}
+                          </span>
+                        )}
+                        {meal.llmCaloriesEstimate != null && (
+                          <span>
+                            LLM estimate:{" "}
+                            <span className="text-indigo-300 font-medium">
+                              {meal.llmCaloriesEstimate} kcal
+                            </span>
+                          </span>
+                        )}
+                        {meal.finalCaloriesEstimate != null && (
+                          <span>
+                            Final estimate:{" "}
+                            <span className="text-slate-100 font-medium">
+                              {meal.finalCaloriesEstimate} kcal
+                            </span>
+                          </span>
+                        )}
+                        {(meal.finalProteinGrams ?? meal.llmProteinGrams) != null && (
+                          <span>
+                            Macros:{" "}
+                            <span className="text-slate-100 font-medium">
+                              Protein {meal.finalProteinGrams ?? meal.llmProteinGrams ?? 0}g · Carbs{" "}
+                              {meal.finalCarbsGrams ?? meal.llmCarbsGrams ?? 0}g · Fat{" "}
+                              {meal.finalFatGrams ?? meal.llmFatGrams ?? 0}g
+                            </span>
+                          </span>
+                        )}
+                        {meal.llmCaloriesExplanation && (
+                          <span className="text-[11px] text-slate-500">
+                            Reason: {meal.llmCaloriesExplanation}
+                          </span>
+                        )}
                       </div>
                     )}
                   </div>
@@ -740,7 +873,7 @@ export const TodayPage: React.FC = () => {
                       </button>
                     )}
                     <button
-                      onClick={() => deleteMeal(meal.id)}
+                      onClick={() => setPendingDeleteMealId(meal.id)}
                       className="text-[11px] px-2 py-1 rounded-md border border-slate-700 text-slate-400 hover:border-red-500 hover:text-red-200"
                     >
                       Delete
@@ -774,7 +907,7 @@ export const TodayPage: React.FC = () => {
                         <img
                           src={editPhotoDataUrl}
                           alt="Meal preview"
-                          className="max-h-32 rounded-lg border border-slate-800 object-cover"
+                          className="max-h-32 rounded-lg border border-slate-800 object-cover ml-auto"
                         />
                       )}
                     </div>
@@ -830,41 +963,13 @@ export const TodayPage: React.FC = () => {
                     </div>
                   </div>
                 ) : (
-                  <div className="flex flex-wrap items-center gap-2 text-xs text-slate-400">
-                    {meal.presetLabel && (
-                      <span className="text-emerald-400">
-                        Preset: {meal.presetLabel}
-                      </span>
-                    )}
-                    {meal.userCaloriesEstimate != null && (
-                      <span>
-                        Your estimate:{" "}
-                        <span className="text-amber-300 font-medium">
-                          {meal.userCaloriesEstimate} kcal
-                        </span>
-                        {meal.userCaloriesConfidence ? ` (${meal.userCaloriesConfidence}/5 confidence)` : ""}
-                      </span>
-                    )}
-                    {meal.llmCaloriesEstimate != null && (
-                      <span>
-                        LLM estimate:{" "}
-                        <span className="text-indigo-300 font-medium">
-                          {meal.llmCaloriesEstimate} kcal
-                        </span>
-                      </span>
-                    )}
-                    {meal.finalCaloriesEstimate != null && (
-                      <span>
-                        Final estimate:{" "}
-                        <span className="text-slate-100 font-medium">
-                          {meal.finalCaloriesEstimate} kcal
-                        </span>
-                      </span>
-                    )}
-                    {meal.llmCaloriesExplanation && (
-                      <span className="text-[11px] text-slate-500">
-                        Reason: {meal.llmCaloriesExplanation}
-                      </span>
+                  <div className="flex items-center justify-end">
+                    {meal.photoDataUrl && (
+                      <img
+                        src={meal.photoDataUrl}
+                        alt="Meal"
+                        className="max-h-24 rounded-lg border border-slate-800 object-cover"
+                      />
                     )}
                   </div>
                 )}
@@ -873,6 +978,19 @@ export const TodayPage: React.FC = () => {
           })}
         </div>
       </section>
+
+      <ConfirmModal
+        open={pendingDeleteMealId !== null}
+        title="Delete meal?"
+        message="This will remove the meal entry permanently."
+        confirmLabel="Delete"
+        onConfirm={() => {
+          if (!pendingDeleteMealId) return;
+          void deleteMeal(pendingDeleteMealId);
+          setPendingDeleteMealId(null);
+        }}
+        onCancel={() => setPendingDeleteMealId(null)}
+      />
 
       <section className="space-y-3 rounded-2xl border border-slate-800 bg-slate-900/40 p-4">
         <div className="flex items-center justify-between flex-wrap gap-2">

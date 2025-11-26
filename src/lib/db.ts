@@ -24,7 +24,13 @@ export type MealEntry = {
   userCaloriesConfidence?: number; // 1-5 self-reported confidence
   llmCaloriesEstimate?: number;
   llmCaloriesExplanation?: string;
+  llmProteinGrams?: number;
+  llmCarbsGrams?: number;
+  llmFatGrams?: number;
   finalCaloriesEstimate?: number; // editable final estimate, starts from llm estimate
+  finalProteinGrams?: number;
+  finalCarbsGrams?: number;
+  finalFatGrams?: number;
   presetKey?: string;
   presetLabel?: string;
   wantsPreset?: boolean;
@@ -44,6 +50,7 @@ export type DailyLog = {
   stressLevel?: number;
   bloating?: number;
   energy?: number;
+  exerciseHours?: number;
   meals: MealEntry[];
   notes: NoteEntry[];
   dailyInsightId?: string;
@@ -126,6 +133,18 @@ export class FoodCoachDB extends Dexie {
           delete log.symptoms;
         });
       });
+    this.version(8).stores({
+      dailyLogs: "id,date",
+      dailyInsights: "++id,date",
+      foodPresets: "++id,key",
+      analysisJobs: "id,startedAt,status"
+    });
+    this.version(9).stores({
+      dailyLogs: "id,date",
+      dailyInsights: "++id,date",
+      foodPresets: "++id,key",
+      analysisJobs: "id,startedAt,status"
+    });
   }
 }
 
@@ -152,6 +171,7 @@ export function useLiveTodayLog() {
         date: todayId,
         meals: [],
         notes: [],
+        exerciseHours: undefined,
         createdAt: now,
         updatedAt: now,
       };

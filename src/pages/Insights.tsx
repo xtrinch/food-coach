@@ -13,9 +13,7 @@ export const InsightsPage: React.FC = () => {
   const rerunDaily = async (date: string) => {
     const jobId = startJob({ type: "daily", label: `Re-run daily – ${date}` });
     try {
-      const old = await db.dailyInsights.where("date").equals(date).toArray();
-      await Promise.all(old.map((i) => db.dailyInsights.delete(String(i.id))));
-      await runDailyInsightIfNeeded(date, { jobId });
+      await runDailyInsightIfNeeded(date, { jobId, force: true });
       finishJob(jobId);
     } catch (e) {
       console.error(e);
@@ -31,7 +29,7 @@ export const InsightsPage: React.FC = () => {
     });
     try {
       // Placeholder: real custom analysis would go here
-      await runDailyInsightIfNeeded(customTo, { jobId });
+      await runDailyInsightIfNeeded(customTo, { jobId, force: true });
       finishJob(jobId);
     } catch (e) {
       console.error(e);
@@ -58,7 +56,7 @@ export const InsightsPage: React.FC = () => {
         <div className="space-y-3">
           {insights.map((insight) => (
             <div
-              key={insight.id}
+              key={insight.id ?? `${insight.date}-${insight.generatedAt}`}
               className="border border-slate-800 rounded-xl px-3 py-2 text-sm space-y-1"
             >
               <div className="flex justify_between items-center">
