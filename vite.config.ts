@@ -2,8 +2,11 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
 
+const baseEnv = process.env.VITE_BASE_PATH ?? "/food-coach/";
+const base = baseEnv.endsWith("/") ? baseEnv : `${baseEnv}/`;
+
 export default defineConfig({
-  base: "/food-coach/",
+  base,
   plugins: [
     react(),
     VitePWA({
@@ -12,7 +15,7 @@ export default defineConfig({
       manifest: {
         name: "Food Coach",
         short_name: "FoodCoach",
-        start_url: "/food-coach/",
+        start_url: base,
         display: "standalone",
         background_color: "#020617",
         theme_color: "#0f172a",

@@ -24,6 +24,21 @@ allprojects {
     }
 }
 
+// Force Java 17 across Android modules (Capacitor defaults to 21)
+subprojects { subproject ->
+    afterEvaluate {
+        def isAndroid = subproject.plugins.hasPlugin('com.android.application') || subproject.plugins.hasPlugin('com.android.library')
+        if (isAndroid && subproject.hasProperty('android')) {
+            subproject.android {
+                compileOptions {
+                    sourceCompatibility JavaVersion.VERSION_17
+                    targetCompatibility JavaVersion.VERSION_17
+                }
+            }
+        }
+    }
+}
+
 task clean(type: Delete) {
     delete rootProject.buildDir
 }

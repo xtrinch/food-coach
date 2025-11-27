@@ -30,3 +30,4 @@ pnpm-debug.log*
 # IDE/editor
 .vscode/
 .idea/
+.gradle/

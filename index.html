@@ -5,7 +5,9 @@
     <title>Food Coach</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#0f172a" />
-    <link rel="manifest" href="/food-coach/manifest.webmanifest" />
+    <link rel="manifest" href="manifest.webmanifest" />
+    <!-- Prefer local copy of Google Identity; driveSync will fall back to remote if needed -->
+    <script src="gsi-client.js" async defer data-google-identity="true"></script>
   </head>
   <body class="bg-slate-900 text-slate-50">
     <div id="root"></div>

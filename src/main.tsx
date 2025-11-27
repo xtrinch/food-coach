@@ -11,9 +11,11 @@ import { SettingsPage } from "./pages/Settings";
 import { JobsPage } from "./pages/Jobs";
 import { AnalysisJobsProvider } from "./lib/analysisJobs";
 
+const basename = import.meta.env.VITE_ROUTER_BASENAME ?? "/food-coach";
+
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
-    <BrowserRouter basename="/food-coach">
+    <BrowserRouter basename={basename}>
       <AnalysisJobsProvider>
         <Layout>
           <Routes>

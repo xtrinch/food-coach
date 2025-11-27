@@ -149,11 +149,18 @@ npm run deploy
 ```
 
 ### Build Android APK (optional)
+Prereqs: Android SDK + Java 17 installed (project targets Java 17 by default), `android/local.properties` points to your SDK. Run `npx cap add android` once to create the native project (already in repo).
+
 ```bash
-npx cap add android
-npx cap copy
-npx cap open android
+# build with Capacitor-friendly base path
+npm run build:android
+npx cap sync android
+cd android && GRADLE_USER_HOME=../.gradle ./gradlew assembleDebug
+# install to a plugged-in device with USB debugging on:
+adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
+
+Open the project in Android Studio instead of CLI: `npx cap open android`. For distribution, create a signed release build (`assembleRelease`) with your signing config.
 
 ---
 

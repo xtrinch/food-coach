@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { backupFileName, buildBackup } from "../lib/backup";
+import { backupFileName, buildBackup, normalizeBackupPayload, restoreBackup } from "../lib/backup";
 import { getDriveClientId, getLastDriveSync, importBackupFromDrive, syncBackupToDrive } from "../lib/driveSync";
 
 export const SettingsPage: React.FC = () => {
@@ -90,6 +90,42 @@ export const SettingsPage: React.FC = () => {
     }
   };
 
+  const importFromFile = async () => {
+    setDriveBusy(true);
+    setDriveStatus("Importing backup from file…");
+    try {
+      const file = await new Promise<File>((resolve, reject) => {
+        const input = document.createElement("input");
+        input.type = "file";
+        input.accept = "application/json";
+        input.onchange = () => {
+          const selected = input.files?.[0];
+          if (!selected) {
+            reject(new Error("No file selected"));
+            return;
+          }
+          resolve(selected);
+        };
+        input.onerror = () => reject(new Error("File selection failed"));
+        input.click();
+      });
+
+      const text = await file.text();
+      const json = JSON.parse(text);
+      const payload = normalizeBackupPayload(json);
+      await restoreBackup(payload);
+      setDriveStatus(
+        `Imported backup from file. ${payload.dailyLogs.length} logs, ${payload.dailyInsights.length} insights, ${payload.foodPresets.length} presets.`
+      );
+      setLastDriveSync(null);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setDriveStatus(`File import failed: ${msg}`);
+    } finally {
+      setDriveBusy(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <section className="space-y-2">
@@ -142,6 +178,13 @@ export const SettingsPage: React.FC = () => {
             className="w-full sm:w-auto px-3 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 disabled:opacity-60 text-xs"
           >
             {driveBusy ? "Working…" : "Import latest from Drive"}
+          </button>
+          <button
+            onClick={importFromFile}
+            disabled={driveBusy}
+            className="w-full sm:w-auto px-3 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 disabled:opacity-60 text-xs"
+          >
+            {driveBusy ? "Working…" : "Import from file"}
           </button>
         </div>
         {lastDriveSync && (
