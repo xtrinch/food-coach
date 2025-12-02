@@ -79,7 +79,7 @@ export const SettingsPage: React.FC = () => {
     try {
       const payload = await importBackupFromDrive();
       setDriveStatus(
-        `Imported backup from Drive. ${payload.dailyLogs.length} logs, ${payload.dailyInsights.length} insights, ${payload.foodPresets.length} presets.`
+        `Imported backup from Drive. ${payload.dailyLogs.length} logs, ${payload.dailyInsights.length} insights.`
       );
       setLastDriveSync(getLastDriveSync());
     } catch (e) {
@@ -115,7 +115,7 @@ export const SettingsPage: React.FC = () => {
       const payload = normalizeBackupPayload(json);
       await restoreBackup(payload);
       setDriveStatus(
-        `Imported backup from file. ${payload.dailyLogs.length} logs, ${payload.dailyInsights.length} insights, ${payload.foodPresets.length} presets.`
+        `Imported backup from file. ${payload.dailyLogs.length} logs, ${payload.dailyInsights.length} insights.`
       );
       setLastDriveSync(null);
     } catch (e) {
@@ -196,7 +196,7 @@ export const SettingsPage: React.FC = () => {
       <section className="space-y-2">
         <h2 className="text-sm font-semibold text-slate-200">Data export</h2>
         <p className="text-xs text-slate-400">
-          Export all logs, insights, presets, and analysis jobs as a JSON file you can store or inspect elsewhere.
+          Export all logs, insights, and analysis jobs as a JSON file you can store or inspect elsewhere.
         </p>
         <button
           onClick={exportData}

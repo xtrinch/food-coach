@@ -30,24 +30,9 @@ Only LLM calls go to OpenAI using the user’s own key.
 
 ### 🥣 Meal Logging with AI Calorie Estimation
 - User types any natural-language meal description.
-- If a **preset** exists → calories auto-fill (no AI call).
-- If not → AI estimates calories.
+- AI estimates calories.
 - User confirms/edits calories.
 - Confirmed calories are saved to the entry.
-
-### ⭐ Reusable Meal Presets (“My usuals”)
-- Checkbox **Save as preset** when adding a meal.
-- User can **rename the preset**.
-- Presets store:
-  - normalized key  
-  - label  
-  - default calories  
-- Next time the same description appears:
-  - calories auto-fill  
-  - preset label appears  
-  - no AI call needed  
-- Manage presets from the **Presets** tab (rename, update calories, delete).
-
 ### 🧠 Automatic Daily Insights (22:00)
 Analyzes:
 - sleep
@@ -80,7 +65,7 @@ Stored forever in IndexedDB.
 
 ### ⚙️ Settings
 - Save OpenAI API key (local)
-- Export all data (logs, insights, presets, jobs) as JSON
+- Export all data (logs, insights, jobs) as JSON
 - Manual Google Drive backup/restore (private app data)
 - Clear all local data (danger zone)
   
@@ -115,7 +100,7 @@ Google Drive uses a baked-in OAuth client ID (env `VITE_GOOGLE_CLIENT_ID`, defau
 ### Database Schema
 - `dailyLogs`
 - `dailyInsights`
-- `foodPresets`
+- `analysisJobs`
 
 ---
 

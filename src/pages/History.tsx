@@ -4,17 +4,7 @@ import { ConfirmModal } from "../components/ConfirmModal";
 
 export const HistoryPage: React.FC = () => {
   const { logs, loading } = useAllDailyLogs();
-  const [pendingDelete, setPendingDelete] = useState<{ logId: string; mealId: string } | null>(null);
-  const [editingBasicsFor, setEditingBasicsFor] = useState<string | null>(null);
-  const [savingBasics, setSavingBasics] = useState(false);
-  const [basicsDraft, setBasicsDraft] = useState({
-    weightKg: "",
-    sleepHours: "",
-    stressLevel: "",
-    bloating: "",
-    energy: "",
-    exerciseHours: "",
-  });
+  const [pendingDeleteDay, setPendingDeleteDay] = useState<string | null>(null);
   const macroStatus = (type: "protein" | "carbs" | "fat", grams: number, totalKcal: number) => {
     const kcalFromMacro = grams * (type === "fat" ? 9 : 4);
     const pct = totalKcal > 0 ? (kcalFromMacro / totalKcal) * 100 : 0;
@@ -33,54 +23,13 @@ export const HistoryPage: React.FC = () => {
     return { label: "OK", color: "text-emerald-300" };
   };
 
+  const fiberStatus = (grams: number) => {
+    if (grams < 20) return { label: "Low", color: "text-sky-300" };
+    if (grams > 40) return { label: "High", color: "text-amber-300" };
+    return { label: "OK", color: "text-emerald-300" };
+  };
+
   if (loading) return <div>Loading...</div>;
-
-  const startEditingBasics = (logId: string) => {
-    const log = logs.find((l) => l.id === logId);
-    if (!log) return;
-    setEditingBasicsFor(logId);
-    setBasicsDraft({
-      weightKg: log.weightKg != null ? String(log.weightKg) : "",
-      sleepHours: log.sleepHours != null ? String(log.sleepHours) : "",
-      stressLevel: log.stressLevel != null ? String(log.stressLevel) : "",
-      bloating: log.bloating != null ? String(log.bloating) : "",
-      energy: log.energy != null ? String(log.energy) : "",
-      exerciseHours: log.exerciseHours != null ? String(log.exerciseHours) : "",
-    });
-  };
-
-  const cancelEditingBasics = () => {
-    setEditingBasicsFor(null);
-    setBasicsDraft({
-      weightKg: "",
-      sleepHours: "",
-      stressLevel: "",
-      bloating: "",
-      energy: "",
-      exerciseHours: "",
-    });
-    setSavingBasics(false);
-  };
-
-  const saveBasics = async (logId: string) => {
-    setSavingBasics(true);
-    const parseVal = (val: string) => {
-      if (!val.trim()) return undefined;
-      const num = Number(val);
-      return Number.isNaN(num) ? undefined : num;
-    };
-    await db.dailyLogs.update(logId, {
-      weightKg: parseVal(basicsDraft.weightKg),
-      sleepHours: parseVal(basicsDraft.sleepHours),
-      stressLevel: parseVal(basicsDraft.stressLevel),
-      bloating: parseVal(basicsDraft.bloating),
-      energy: parseVal(basicsDraft.energy),
-      exerciseHours: parseVal(basicsDraft.exerciseHours),
-      updatedAt: new Date().toISOString(),
-    });
-    setSavingBasics(false);
-    setEditingBasicsFor(null);
-  };
 
   return (
     <div className="space-y-4">
@@ -111,111 +60,13 @@ export const HistoryPage: React.FC = () => {
                   {log.energy != null && <span>Energy: {log.energy}/5</span>}
                   {log.exerciseHours != null && <span>Exercise: {log.exerciseHours} h</span>}
                 </div>
-                <div className="flex flex-wrap gap-2">
-                  <button
-                    onClick={() => startEditingBasics(log.id)}
-                    className="text-xs px-3 py-2 rounded-md border border-slate-700 text-slate-300 hover:border-indigo-500"
-                  >
-                    Edit basics
-                  </button>
-                </div>
-                {editingBasicsFor === log.id && (
-                  <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-3 space-y-2">
-                    <p className="text-[11px] text-slate-400">Update basics for this day.</p>
-                    <div className="grid gap-3 sm:grid-cols-3">
-                      <div className="space-y-1">
-                        <label className="text-[11px] text-slate-400">Weight (kg)</label>
-                        <input
-                          type="number"
-                          className="w-full"
-                          value={basicsDraft.weightKg}
-                          onChange={(e) => setBasicsDraft((prev) => ({ ...prev, weightKg: e.target.value }))}
-                          placeholder="e.g. 68.4"
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <label className="text-[11px] text-slate-400">Sleep (hours)</label>
-                        <input
-                          type="number"
-                          className="w-full"
-                          value={basicsDraft.sleepHours}
-                          onChange={(e) => setBasicsDraft((prev) => ({ ...prev, sleepHours: e.target.value }))}
-                          placeholder="e.g. 7.5"
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <label className="text-[11px] text-slate-400">Stress (0–5)</label>
-                        <input
-                          type="number"
-                          min={0}
-                          max={5}
-                          className="w-full"
-                          value={basicsDraft.stressLevel}
-                          onChange={(e) => setBasicsDraft((prev) => ({ ...prev, stressLevel: e.target.value }))}
-                          placeholder="0-5"
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <label className="text-[11px] text-slate-400">Bloating (0–5)</label>
-                        <input
-                          type="number"
-                          min={0}
-                          max={5}
-                          className="w-full"
-                          value={basicsDraft.bloating}
-                          onChange={(e) => setBasicsDraft((prev) => ({ ...prev, bloating: e.target.value }))}
-                          placeholder="0-5"
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <label className="text-[11px] text-slate-400">Energy (0–5)</label>
-                        <input
-                          type="number"
-                          min={0}
-                          max={5}
-                          className="w-full"
-                          value={basicsDraft.energy}
-                          onChange={(e) => setBasicsDraft((prev) => ({ ...prev, energy: e.target.value }))}
-                          placeholder="0-5"
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <label className="text-[11px] text-slate-400">Exercise (hours)</label>
-                        <input
-                          type="number"
-                          step="0.1"
-                          min={0}
-                          className="w-full"
-                          value={basicsDraft.exerciseHours}
-                          onChange={(e) => setBasicsDraft((prev) => ({ ...prev, exerciseHours: e.target.value }))}
-                          placeholder="e.g. 0.5"
-                        />
-                      </div>
-                    </div>
-                    <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
-                      <button
-                        onClick={() => saveBasics(log.id)}
-                        disabled={savingBasics}
-                        className="w-full sm:w-auto text-xs px-3 py-2 rounded-md bg-indigo-500 hover:bg-indigo-600 disabled:opacity-60"
-                      >
-                        {savingBasics ? "Saving..." : "Save basics"}
-                      </button>
-                      <button
-                        onClick={cancelEditingBasics}
-                        className="w-full sm:w-auto text-xs px-3 py-2 rounded-md border border-slate-700 text-slate-300 hover:border-slate-500"
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  </div>
-                )}
               </div>
               <div className="space-y-1 text-xs text-slate-400 md:text-right">
                 <div>Meals: {log.meals.length} · Notes: {log.notes.length}</div>
                 <div className="text-slate-300 font-semibold">
                   Total kcal:{" "}
                   {log.meals
-                    .map((m) => m.finalCaloriesEstimate ?? m.llmCaloriesEstimate ?? m.userCaloriesEstimate ?? 0)
+                    .map((m) => m.finalCaloriesEstimate ?? m.llmCaloriesEstimate ?? 0)
                     .reduce((a, b) => a + (b ?? 0), 0)}
                 </div>
                 <div className="text-slate-300 font-semibold">
@@ -229,15 +80,19 @@ export const HistoryPage: React.FC = () => {
                     const totalFat = log.meals
                       .map((m) => m.finalFatGrams ?? m.llmFatGrams ?? 0)
                       .reduce((a, b) => a + (b ?? 0), 0);
+                    const totalFiber = log.meals
+                      .map((m) => m.finalFiberGrams ?? m.llmFiberGrams ?? 0)
+                      .reduce((a, b) => a + (b ?? 0), 0);
                     const totalKcal = log.meals
-                      .map((m) => m.finalCaloriesEstimate ?? m.llmCaloriesEstimate ?? m.userCaloriesEstimate ?? 0)
+                      .map((m) => m.finalCaloriesEstimate ?? m.llmCaloriesEstimate ?? 0)
                       .reduce((a, b) => a + (b ?? 0), 0);
                     const proteinStatus = macroStatus("protein", totalProtein, totalKcal);
                     const carbStatus = macroStatus("carbs", totalCarbs, totalKcal);
                     const fatStatus = macroStatus("fat", totalFat, totalKcal);
+                    const fiberTrend = fiberStatus(totalFiber);
                     return (
                       <span>
-                        Macros:{" "}
+                        Macros & fiber:{" "}
                         <span className={proteinStatus.color}>
                           Protein {totalProtein} g
                         </span>{" "}
@@ -248,12 +103,24 @@ export const HistoryPage: React.FC = () => {
                         ·{" "}
                         <span className={fatStatus.color}>
                           Fat {totalFat} g
+                        </span>{" "}
+                        ·{" "}
+                        <span className={fiberTrend.color}>
+                          Fiber {totalFiber} g
                         </span>
                       </span>
                     );
                   })()}
                 </div>
               </div>
+            </div>
+            <div className="flex justify-end">
+              <button
+                onClick={() => setPendingDeleteDay(log.id)}
+                className="text-xs px-3 py-2 rounded-md border border-red-700 text-red-200 hover:border-red-500 hover:text-red-100"
+              >
+                Delete this day
+              </button>
             </div>
             <details className="text-xs text-slate-300">
               <summary className="cursor-pointer text-slate-400">Show details</summary>
@@ -262,7 +129,7 @@ export const HistoryPage: React.FC = () => {
                   <div className="font-semibold text-slate-200 mb-1">Meals</div>
                   {log.meals.length === 0 && <div className="text-slate-500">No meals.</div>}
                   {log.meals.map((m) => {
-                    const calories = m.finalCaloriesEstimate ?? m.llmCaloriesEstimate ?? m.userCaloriesEstimate;
+                    const calories = m.finalCaloriesEstimate ?? m.llmCaloriesEstimate;
                     return (
                       <div
                         key={m.id}
@@ -290,18 +157,13 @@ export const HistoryPage: React.FC = () => {
                                 <span>
                                   Protein {m.finalProteinGrams ?? m.llmProteinGrams ?? 0}g · Carbs{" "}
                                   {m.finalCarbsGrams ?? m.llmCarbsGrams ?? 0}g · Fat{" "}
-                                  {m.finalFatGrams ?? m.llmFatGrams ?? 0}g
+                                  {m.finalFatGrams ?? m.llmFatGrams ?? 0}g · Fiber{" "}
+                                  {m.finalFiberGrams ?? m.llmFiberGrams ?? 0}g
                                 </span>
                               )}
                             </div>
                           </div>
                         </div>
-                        <button
-                          onClick={() => setPendingDelete({ logId: log.id, mealId: m.id })}
-                          className="w-full sm:w-auto text-xs px-3 py-2 text-center rounded-md border border-slate-700 text-slate-300 hover:border-red-500 hover:text-red-200"
-                        >
-                          Delete
-                        </button>
                       </div>
                     );
                   })}
@@ -327,24 +189,18 @@ export const HistoryPage: React.FC = () => {
           ))}
         </div>
       <ConfirmModal
-        open={pendingDelete !== null}
-        title="Delete meal?"
-        message="This will remove the meal from history permanently."
-        confirmLabel="Delete"
+        open={pendingDeleteDay !== null}
+        title="Delete this day?"
+        message={`This will remove all meals, notes, basics, and insights for ${pendingDeleteDay ?? ""}.`}
+        confirmLabel="Delete day"
         onConfirm={async () => {
-          if (!pendingDelete) return;
-          const { logId, mealId } = pendingDelete;
-          const log = logs.find((l) => l.id === logId);
-          if (log) {
-            const updatedMeals = log.meals.filter((meal) => meal.id !== mealId);
-            await db.dailyLogs.update(logId, {
-              meals: updatedMeals,
-              updatedAt: new Date().toISOString(),
-            });
-          }
-          setPendingDelete(null);
+          if (!pendingDeleteDay) return;
+          const target = pendingDeleteDay;
+          await db.dailyInsights.where("date").equals(target).delete();
+          await db.dailyLogs.delete(target);
+          setPendingDeleteDay(null);
         }}
-        onCancel={() => setPendingDelete(null)}
+        onCancel={() => setPendingDeleteDay(null)}
       />
     </div>
   );

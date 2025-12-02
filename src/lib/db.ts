@@ -20,20 +20,18 @@ export type MealEntry = {
   timestamp: string;
   description: string;
   photoDataUrl?: string;        // optional image to replace/augment description
-  userCaloriesEstimate?: number;
-  userCaloriesConfidence?: number; // 1-5 self-reported confidence
   llmCaloriesEstimate?: number;
   llmCaloriesExplanation?: string;
+  llmImprovementSuggestions?: string[];
   llmProteinGrams?: number;
   llmCarbsGrams?: number;
   llmFatGrams?: number;
+  llmFiberGrams?: number;
   finalCaloriesEstimate?: number; // editable final estimate, starts from llm estimate
   finalProteinGrams?: number;
   finalCarbsGrams?: number;
   finalFatGrams?: number;
-  presetKey?: string;
-  presetLabel?: string;
-  wantsPreset?: boolean;
+  finalFiberGrams?: number;
 };
 
 export type NoteEntry = {
@@ -76,10 +74,6 @@ export type FoodPreset = {
   createdAt: string;
   updatedAt: string;
 };
-
-export function normalizeFoodKey(text: string): string {
-  return text.trim().toLowerCase();
-}
 
 export class FoodCoachDB extends Dexie {
   dailyLogs!: Table<DailyLog, string>;
@@ -146,6 +140,45 @@ export class FoodCoachDB extends Dexie {
       foodPresets: "++id,key",
       analysisJobs: "id,startedAt,status"
     });
+    this.version(10)
+      .stores({
+        dailyLogs: "id,date",
+        dailyInsights: "++id,date",
+        foodPresets: "++id,key",
+        analysisJobs: "id,startedAt,status"
+      })
+      .upgrade(async (tx) => {
+        const logs = tx.table("dailyLogs");
+        await logs.toCollection().modify((log: any) => {
+          if (!Array.isArray(log.meals)) return;
+          log.meals = log.meals.map((meal: any) => {
+            const nextFinal =
+              meal.finalCaloriesEstimate ??
+              meal.llmCaloriesEstimate ??
+              meal.userCaloriesEstimate;
+            const { userCaloriesEstimate, userCaloriesConfidence, ...rest } = meal;
+            return {
+              ...rest,
+              finalCaloriesEstimate: nextFinal,
+            };
+          });
+        });
+      });
+    this.version(11)
+      .stores({
+        dailyLogs: "id,date",
+        dailyInsights: "++id,date",
+        foodPresets: "++id,key",
+        analysisJobs: "id,startedAt,status"
+      })
+      .upgrade(async (tx) => {
+        // Presets are no longer used; clear any existing records.
+        try {
+          await tx.table("foodPresets").clear();
+        } catch (e) {
+          console.warn("Failed to clear legacy presets", e);
+        }
+      });
   }
 }
 
@@ -156,20 +189,25 @@ export function getTodayId() {
   return d.toISOString().slice(0, 10);
 }
 
-export function useLiveTodayLog() {
-  const todayId = getTodayId();
+export function useLiveDailyLog(date: string, options?: { createIfMissing?: boolean }) {
+  const targetDate = date;
+  const createIfMissing = options?.createIfMissing ?? true;
 
   useEffect(() => {
+    if (!targetDate) return;
+    if (!createIfMissing) return;
+    const todayId = getTodayId();
+    if (targetDate > todayId) return;
     let cancelled = false;
 
     (async () => {
-      const existing = await db.dailyLogs.get(todayId);
+      const existing = await db.dailyLogs.get(targetDate);
       if (existing || cancelled) return;
 
       const now = new Date().toISOString();
       const log: DailyLog = {
-        id: todayId,
-        date: todayId,
+        id: targetDate,
+        date: targetDate,
         meals: [],
         notes: [],
         exerciseHours: undefined,
@@ -183,12 +221,16 @@ export function useLiveTodayLog() {
     return () => {
       cancelled = true;
     };
-  }, [todayId]);
+  }, [targetDate, createIfMissing]);
 
-  const todayLog = useLiveQuery(async () => db.dailyLogs.get(todayId), [todayId]);
-  const loading = !todayLog;
+  const dailyLog = useLiveQuery(async () => (targetDate ? db.dailyLogs.get(targetDate) : undefined), [targetDate], null);
+  const loading = dailyLog === null;
 
-  return { todayLog, loading };
+  return { dailyLog: dailyLog ?? undefined, loading };
+}
+
+export function useLiveTodayLog() {
+  return useLiveDailyLog(getTodayId());
 }
 
 export function useAllDailyLogs() {
@@ -205,12 +247,6 @@ export function useAllDailyInsights() {
   }, []);
   const loading = !insights;
   return { insights: insights ?? [], loading };
-}
-
-export function useAllFoodPresets() {
-  const presets = useLiveQuery(async () => db.foodPresets.orderBy("id").reverse().toArray(), []);
-  const loading = !presets;
-  return { presets: presets ?? [], loading };
 }
 
 export function useAllAnalysisJobs() {

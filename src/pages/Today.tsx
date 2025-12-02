@@ -1,33 +1,59 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { db, useLiveTodayLog, normalizeFoodKey, useAllFoodPresets, MealEntry, getTodayId } from "../lib/db";
+import { db, useLiveDailyLog, MealEntry, getTodayId } from "../lib/db";
 import { useAnalysisJobs } from "../lib/analysisJobs";
 import { runDailyInsightIfNeeded, runMealCaloriesEstimation } from "../lib/openai";
 import { ConfirmModal } from "../components/ConfirmModal";
 
+const ArrowLeftIcon: React.FC<{ className?: string }> = ({ className = "h-4 w-4" }) => (
+  <svg
+    viewBox="0 0 20 20"
+    fill="none"
+    xmlns="http://www.w3.org/2000/svg"
+    className={className}
+    aria-hidden="true"
+  >
+    <path d="M12.5 4.5 7 10l5.5 5.5" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+  </svg>
+);
+
+const ArrowRightIcon: React.FC<{ className?: string }> = ({ className = "h-4 w-4" }) => (
+  <svg
+    viewBox="0 0 20 20"
+    fill="none"
+    xmlns="http://www.w3.org/2000/svg"
+    className={className}
+    aria-hidden="true"
+  >
+    <path d="M7.5 4.5 13 10l-5.5 5.5" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+  </svg>
+);
+
 export const TodayPage: React.FC = () => {
-  const { todayLog, loading } = useLiveTodayLog();
   const { startJob, finishJob, failJob } = useAnalysisJobs();
-  const { presets: savedPresets } = useAllFoodPresets();
+  const [selectedDate, setSelectedDate] = useState(getTodayId());
+  const [autoCreateBlockedDate, setAutoCreateBlockedDate] = useState<string | null>(null);
+  const { dailyLog: todayLog, loading } = useLiveDailyLog(selectedDate, {
+    createIfMissing: autoCreateBlockedDate !== selectedDate,
+  });
   const [now, setNow] = useState(new Date());
   const [newMeal, setNewMeal] = useState("");
-  const [manualCalories, setManualCalories] = useState("");
-  const [calorieConfidence, setCalorieConfidence] = useState("3");
-  const [saveAsPreset, setSaveAsPreset] = useState(false);
-  const [presetName, setPresetName] = useState("");
-  const [selectedPresetId, setSelectedPresetId] = useState<string>("");
   const [noteText, setNoteText] = useState("");
   const [manualInsightRunning, setManualInsightRunning] = useState(false);
   const [editingMealId, setEditingMealId] = useState<string | null>(null);
   const [editDescription, setEditDescription] = useState("");
-  const [editUserCalories, setEditUserCalories] = useState("");
-  const [editConfidence, setEditConfidence] = useState("");
   const [editFinalCalories, setEditFinalCalories] = useState("");
   const [editBusy, setEditBusy] = useState(false);
   const [mealPhotoDataUrl, setMealPhotoDataUrl] = useState<string | null>(null);
   const [editPhotoDataUrl, setEditPhotoDataUrl] = useState<string | null>(null);
   const catchupStarted = useRef(false);
+  const lastDateRequest = useRef<string | null>(null);
   const [pendingDeleteMealId, setPendingDeleteMealId] = useState<string | null>(null);
+  const [pendingDeleteDay, setPendingDeleteDay] = useState<string | null>(null);
+  const [pendingCreateDate, setPendingCreateDate] = useState<string | null>(null);
   const [basicsOpenMobile, setBasicsOpenMobile] = useState(false);
+
+  const formatDate = (value: Date) => value.toISOString().slice(0, 10);
+
   const macroStatus = (type: "protein" | "carbs" | "fat", grams: number, totalKcal: number) => {
     const kcalFromMacro = grams * (type === "fat" ? 9 : 4);
     const pct = totalKcal > 0 ? (kcalFromMacro / totalKcal) * 100 : 0;
@@ -47,6 +73,12 @@ export const TodayPage: React.FC = () => {
     return { label: "OK", color: "text-emerald-300" };
   };
 
+  const fiberStatus = (grams: number) => {
+    if (grams < 20) return { label: "Low", color: "text-sky-300" };
+    if (grams > 40) return { label: "High", color: "text-amber-300" };
+    return { label: "OK", color: "text-emerald-300" };
+  };
+
   const handlePhotoUpload = (file: File, setter: (data: string | null) => void) => {
     const reader = new FileReader();
     reader.onload = () => {
@@ -63,10 +95,65 @@ export const TodayPage: React.FC = () => {
     return () => clearInterval(id);
   }, []);
 
-  const isToday = useMemo(() => {
-    const d = new Date();
-    return todayLog?.date === d.toISOString().slice(0, 10);
-  }, [todayLog]);
+  const todayId = useMemo(() => now.toISOString().slice(0, 10), [now]);
+  const isToday = selectedDate === todayId;
+
+  const requestDateChange = async (value: string) => {
+    if (!value) return;
+    const targetDate = value > todayId ? todayId : value;
+    if (autoCreateBlockedDate && autoCreateBlockedDate !== targetDate) {
+      setAutoCreateBlockedDate(null);
+    }
+    lastDateRequest.current = targetDate;
+    if (value > todayId) {
+      setSelectedDate(todayId);
+      setPendingCreateDate(null);
+      return;
+    }
+    const existing = await db.dailyLogs.get(targetDate);
+    if (lastDateRequest.current !== targetDate) return;
+    if (existing || targetDate === todayId) {
+      setSelectedDate(targetDate);
+      setPendingCreateDate(null);
+      return;
+    }
+    setPendingCreateDate(targetDate);
+  };
+
+  const shiftSelectedDate = (delta: number) => {
+    const base = new Date(`${selectedDate}T00:00:00Z`);
+    if (Number.isNaN(base.getTime())) return;
+    base.setUTCDate(base.getUTCDate() + delta);
+    const nextDate = formatDate(base);
+    void requestDateChange(nextDate);
+  };
+
+  const handleDateChange = (value: string) => {
+    void requestDateChange(value);
+  };
+
+  const createBlankLog = async (date: string) => {
+    if (!date) return;
+    if (date > todayId) return;
+    const existing = await db.dailyLogs.get(date);
+    if (existing) {
+      setAutoCreateBlockedDate(null);
+      setSelectedDate(date);
+      return;
+    }
+    const nowIso = new Date().toISOString();
+    await db.dailyLogs.add({
+      id: date,
+      date,
+      meals: [],
+      notes: [],
+      exerciseHours: undefined,
+      createdAt: nowIso,
+      updatedAt: nowIso,
+    });
+    setAutoCreateBlockedDate(null);
+    setSelectedDate(date);
+  };
 
   useEffect(() => {
     if (!todayLog) return;
@@ -134,8 +221,80 @@ export const TodayPage: React.FC = () => {
     };
   }, [startJob, finishJob, failJob]);
 
-  if (loading || !todayLog) {
+  if (loading) {
     return <div>Loading...</div>;
+  }
+
+  if (!todayLog) {
+    return (
+      <div className="space-y-6">
+        <section className="space-y-3">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div className="space-y-1">
+              <h1 className="text-xl font-semibold">Day – {selectedDate}</h1>
+              <p className="text-sm text-slate-400">No log exists for this date.</p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => shiftSelectedDate(-1)}
+                className="text-xs px-3 py-2 rounded-md border border-slate-700 text-slate-200 hover:border-indigo-500 flex items-center justify-center"
+                aria-label="Previous day"
+              >
+                <span className="sr-only">Previous day</span>
+                <ArrowLeftIcon />
+              </button>
+              <input
+                type="date"
+                value={selectedDate}
+                max={todayId}
+                onChange={(e) => void handleDateChange(e.target.value)}
+                className="rounded-md border border-slate-700 bg-slate-900/60 px-3 py-2 text-sm text-slate-100 focus:border-indigo-500 focus:outline-none focus:ring-0"
+              />
+              <button
+                type="button"
+                onClick={() => shiftSelectedDate(1)}
+                disabled={selectedDate >= todayId}
+                className="text-xs px-3 py-2 rounded-md border border-slate-700 text-slate-200 hover:border-indigo-500 disabled:opacity-60 flex items-center justify-center"
+                aria-label="Next day"
+              >
+                <span className="sr-only">Next day</span>
+                <ArrowRightIcon />
+              </button>
+              <button
+                type="button"
+                onClick={() => handleDateChange(todayId)}
+                disabled={selectedDate === todayId}
+                className="text-xs px-3 py-2 rounded-md border border-slate-700 text-slate-200 hover:border-indigo-500 disabled:opacity-60"
+              >
+                Jump to today
+              </button>
+            </div>
+          </div>
+        </section>
+
+        <section className="space-y-3 rounded-2xl border border-slate-800 bg-slate-900/40 p-4">
+          <p className="text-sm text-slate-300">
+            This day has no log. You can create a blank entry or pick another date.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={() => void createBlankLog(selectedDate)}
+              className="text-xs px-3 py-2 rounded-md bg-indigo-500 hover:bg-indigo-600 text-slate-50"
+            >
+              Create blank log
+            </button>
+            <button
+              onClick={() => handleDateChange(todayId)}
+              className="text-xs px-3 py-2 rounded-md border border-slate-700 text-slate-200 hover:border-indigo-500"
+              disabled={selectedDate === todayId}
+            >
+              Jump to today
+            </button>
+          </div>
+        </section>
+      </div>
+    );
   }
 
   const handleWeightChange = async (value: string) => {
@@ -188,27 +347,7 @@ export const TodayPage: React.FC = () => {
 
   const resetMealForm = () => {
     setNewMeal("");
-    setPresetName("");
-    setSaveAsPreset(false);
-    setManualCalories("");
-    setCalorieConfidence("3");
-    setSelectedPresetId("");
     setMealPhotoDataUrl(null);
-  };
-
-  const insertPresetIntoMeal = () => {
-    if (!selectedPresetId) return;
-    const preset = savedPresets.find((p) => String(p.id) === selectedPresetId);
-    if (!preset) return;
-    const snippet = `- ${preset.label} (from preset, fixed precalculated calories at ${preset.defaultCalories} kcal)`;
-    const nextText = newMeal.trim() ? `${newMeal.trim()}\n${snippet}` : snippet;
-    setNewMeal(nextText);
-
-    const currentCalories = Number(manualCalories);
-    const base = !Number.isNaN(currentCalories) ? currentCalories : 0;
-    const nextCalories = base + preset.defaultCalories;
-    setManualCalories(String(nextCalories));
-    setCalorieConfidence("5");
   };
 
   const runManualDailyAnalysis = async () => {
@@ -236,49 +375,14 @@ export const TodayPage: React.FC = () => {
     const description = newMeal.trim() || "(Photo meal)";
     const id = crypto.randomUUID();
     const timestamp = new Date().toISOString();
-    const presetKey = normalizeFoodKey(description);
     const nowIso = new Date().toISOString();
 
-    const manualCaloriesValue = Number(manualCalories);
-    const hasManualCalories = manualCalories.trim() !== "" && !Number.isNaN(manualCaloriesValue);
-    const confidenceValue = Number(calorieConfidence);
     const entryBase = {
       id,
       timestamp,
       description,
-      wantsPreset: saveAsPreset,
-      presetKey,
-      presetLabel: saveAsPreset ? (presetName.trim() || description) : undefined,
       photoDataUrl: mealPhotoDataUrl || undefined,
-      userCaloriesEstimate: hasManualCalories ? manualCaloriesValue : undefined,
-      userCaloriesConfidence:
-        hasManualCalories && !Number.isNaN(confidenceValue) ? confidenceValue : undefined,
     };
-
-    const existingPreset = await db.foodPresets.where("key").equals(presetKey).first();
-
-    if (existingPreset) {
-      const entry = {
-        ...entryBase,
-        llmCaloriesEstimate: existingPreset.defaultCalories,
-        finalCaloriesEstimate: existingPreset.defaultCalories,
-        presetLabel: existingPreset.label,
-      };
-      await db.dailyLogs.update(todayLog.id, {
-        meals: [entry, ...todayLog.meals],
-        updatedAt: nowIso,
-      });
-
-      if (saveAsPreset && presetName.trim() && presetName.trim() !== existingPreset.label) {
-        await db.foodPresets.update(existingPreset.id!, {
-          label: presetName.trim(),
-          updatedAt: nowIso,
-        });
-      }
-
-      resetMealForm();
-      return;
-    }
 
     await db.dailyLogs.update(todayLog.id, {
       meals: [entryBase, ...todayLog.meals],
@@ -291,14 +395,15 @@ export const TodayPage: React.FC = () => {
       label: `Calories – ${description.slice(0, 24)}`,
     });
     try {
-      const { calories, explanation, proteinGrams, carbsGrams, fatGrams } = await runMealCaloriesEstimation(
-        description,
-        {
-          userEstimate: hasManualCalories ? manualCaloriesValue : undefined,
-          userConfidence: hasManualCalories && !Number.isNaN(confidenceValue) ? confidenceValue : undefined,
-          photoDataUrl: mealPhotoDataUrl || undefined,
-        },
-        { jobId }
+      const dayHistory = {
+        ...todayLog,
+        meals: todayLog.meals.map(({ photoDataUrl, ...rest }) => rest),
+      };
+      const { calories, explanation, improvements, proteinGrams, carbsGrams, fatGrams, fiberGrams } =
+        await runMealCaloriesEstimation(
+          description,
+          { photoDataUrl: mealPhotoDataUrl || undefined, dayHistory },
+          { jobId }
       );
       const updatedLog = await db.dailyLogs.get(todayLog.id);
       const updatedMeals = (updatedLog?.meals ?? []).map((m) =>
@@ -307,13 +412,16 @@ export const TodayPage: React.FC = () => {
               ...m,
               llmCaloriesEstimate: calories,
               llmCaloriesExplanation: explanation,
+              llmImprovementSuggestions: improvements && improvements.length > 0 ? improvements : undefined,
               finalCaloriesEstimate: calories,
               llmProteinGrams: proteinGrams,
               llmCarbsGrams: carbsGrams,
               llmFatGrams: fatGrams,
+              llmFiberGrams: fiberGrams,
               finalProteinGrams: proteinGrams,
               finalCarbsGrams: carbsGrams,
               finalFatGrams: fatGrams,
+              finalFiberGrams: fiberGrams,
             }
           : m
       );
@@ -321,30 +429,6 @@ export const TodayPage: React.FC = () => {
         meals: updatedMeals,
         updatedAt: new Date().toISOString(),
       });
-
-      const meal = updatedMeals.find((m) => m.id === id);
-      if (meal?.wantsPreset && calories) {
-        const nowPresetIso = new Date().toISOString();
-        const key = meal.presetKey ?? normalizeFoodKey(meal.description);
-        const label = meal.presetLabel || meal.description;
-        const existingPreset = await db.foodPresets.where("key").equals(key).first();
-        if (!existingPreset) {
-          await db.foodPresets.add({
-            key,
-            label,
-            defaultCalories: calories,
-            createdAt: nowPresetIso,
-            updatedAt: nowPresetIso,
-          });
-        } else {
-          await db.foodPresets.update(existingPreset.id!, {
-            defaultCalories: calories,
-            label,
-            updatedAt: nowPresetIso,
-          });
-        }
-      }
-
       finishJob(jobId);
     } catch (e) {
       console.error(e);
@@ -355,12 +439,7 @@ export const TodayPage: React.FC = () => {
   const startEditingMeal = (meal: MealEntry) => {
     setEditingMealId(meal.id);
     setEditDescription(meal.description);
-    setEditUserCalories(meal.userCaloriesEstimate != null ? String(meal.userCaloriesEstimate) : "");
-    setEditConfidence(meal.userCaloriesConfidence != null ? String(meal.userCaloriesConfidence) : "");
-    const initialFinal =
-      meal.finalCaloriesEstimate ??
-      meal.llmCaloriesEstimate ??
-      meal.userCaloriesEstimate
+    const initialFinal = meal.finalCaloriesEstimate ?? meal.llmCaloriesEstimate;
     setEditFinalCalories(initialFinal != null ? String(initialFinal) : "");
     setEditPhotoDataUrl(meal.photoDataUrl ?? null);
   };
@@ -368,8 +447,6 @@ export const TodayPage: React.FC = () => {
   const cancelEditingMeal = () => {
     setEditingMealId(null);
     setEditDescription("");
-    setEditUserCalories("");
-    setEditConfidence("");
     setEditFinalCalories("");
     setEditBusy(false);
     setEditPhotoDataUrl(null);
@@ -385,25 +462,16 @@ export const TodayPage: React.FC = () => {
 
     setEditBusy(true);
     const description = (editDescription || target.description).trim() || "(Photo meal)";
-    const userEstimateParsed = editUserCalories.trim() !== "" ? Number(editUserCalories) : undefined;
-    const userEstimate = Number.isNaN(userEstimateParsed) ? undefined : userEstimateParsed;
-    const userConfidenceParsed = editConfidence.trim() !== "" ? Number(editConfidence) : undefined;
-    const userConfidence = Number.isNaN(userConfidenceParsed) ? undefined : userConfidenceParsed;
     const finalParsed = editFinalCalories.trim() !== "" ? Number(editFinalCalories) : undefined;
     const finalEstimate = Number.isNaN(finalParsed) ? undefined : finalParsed;
 
     const descChanged = description !== target.description;
-    const userChanged = (userEstimate ?? undefined) !== (target.userCaloriesEstimate ?? undefined);
-    const confChanged = (userConfidence ?? undefined) !== (target.userCaloriesConfidence ?? undefined);
     const photoChanged = (editPhotoDataUrl ?? null) !== (target.photoDataUrl ?? null);
-    const shouldRerunLLM = descChanged || userChanged || confChanged || photoChanged;
+    const shouldRerunLLM = descChanged || photoChanged;
 
     const baseMeal: MealEntry = {
       ...target,
       description,
-      userCaloriesEstimate: userEstimate,
-      userCaloriesConfidence: userConfidence,
-      presetKey: normalizeFoodKey(description),
       photoDataUrl: editPhotoDataUrl || undefined,
     };
 
@@ -414,6 +482,7 @@ export const TodayPage: React.FC = () => {
             ...baseMeal,
             llmCaloriesEstimate: shouldRerunLLM ? undefined : m.llmCaloriesEstimate,
             llmCaloriesExplanation: shouldRerunLLM ? undefined : m.llmCaloriesExplanation,
+            llmImprovementSuggestions: shouldRerunLLM ? undefined : m.llmImprovementSuggestions,
             finalCaloriesEstimate: shouldRerunLLM ? undefined : finalEstimate,
           }
         : m
@@ -430,15 +499,14 @@ export const TodayPage: React.FC = () => {
         label: `Calories – ${description.slice(0, 24)}`,
       });
       try {
-        const { calories, explanation, proteinGrams, carbsGrams, fatGrams } = await runMealCaloriesEstimation(
-          description,
-          {
-            userEstimate,
-            userConfidence,
-            photoDataUrl: editPhotoDataUrl || undefined,
-          },
-          { jobId }
-        );
+        const latestLog = await db.dailyLogs.get(todayLog.id);
+        const historySource = latestLog ?? todayLog;
+        const dayHistory = {
+          ...historySource,
+          meals: (historySource.meals ?? []).map(({ photoDataUrl, ...rest }) => rest),
+        };
+        const { calories, explanation, improvements, proteinGrams, carbsGrams, fatGrams, fiberGrams } =
+          await runMealCaloriesEstimation(description, { photoDataUrl: editPhotoDataUrl || undefined, dayHistory }, { jobId });
         const latest = await db.dailyLogs.get(todayLog.id);
         const refreshedMeals = (latest?.meals ?? []).map((m) =>
           m.id === target.id
@@ -446,13 +514,16 @@ export const TodayPage: React.FC = () => {
                 ...m,
                 llmCaloriesEstimate: calories,
                 llmCaloriesExplanation: explanation,
+                llmImprovementSuggestions: improvements && improvements.length > 0 ? improvements : undefined,
                 finalCaloriesEstimate: calories,
                 llmProteinGrams: proteinGrams,
                 llmCarbsGrams: carbsGrams,
                 llmFatGrams: fatGrams,
+                llmFiberGrams: fiberGrams,
                 finalProteinGrams: proteinGrams,
                 finalCarbsGrams: carbsGrams,
                 finalFatGrams: fatGrams,
+                finalFiberGrams: fiberGrams,
               }
             : m
         );
@@ -479,6 +550,25 @@ export const TodayPage: React.FC = () => {
     });
   };
 
+  const deleteDay = async (date: string) => {
+    await db.dailyInsights.where("date").equals(date).delete();
+    await db.dailyLogs.delete(date);
+    setAutoCreateBlockedDate(date);
+    if (selectedDate === date) {
+      setEditingMealId(null);
+      setPendingDeleteMealId(null);
+      setPendingCreateDate(null);
+      setPendingDeleteDay(null);
+      setNewMeal("");
+      setNoteText("");
+      setMealPhotoDataUrl(null);
+      setEditPhotoDataUrl(null);
+      setSelectedPresetId("");
+      setSaveAsPreset(false);
+      setPresetName("");
+    }
+  };
+
   const addNoteEntry = async () => {
     if (!noteText.trim()) return;
     const entry = {
@@ -498,11 +588,58 @@ export const TodayPage: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      <section className="space-y-2">
-        <h1 className="text-xl font-semibold">Today – {todayLog.date}</h1>
-        <p className="text-sm text-slate-400">
-          Log your day. Daily analysis runs automatically around 22:00 using your recent history.
-        </p>
+      <section className="space-y-3">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div className="space-y-1">
+            <h1 className="text-xl font-semibold">Today – {todayLog.date}</h1>
+            <p className="text-sm text-slate-400">
+              Log your day. Daily analysis runs automatically around 22:00 using your recent history.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => shiftSelectedDate(-1)}
+              className="text-xs px-3 py-2 rounded-md border border-slate-700 text-slate-200 hover:border-indigo-500 flex items-center justify-center"
+              aria-label="Previous day"
+            >
+              <span className="sr-only">Previous day</span>
+              <ArrowLeftIcon />
+            </button>
+            <input
+              type="date"
+              value={selectedDate}
+              max={todayId}
+              onChange={(e) => void handleDateChange(e.target.value)}
+              className="rounded-md border border-slate-700 bg-slate-900/60 px-3 py-2 text-sm text-slate-100 focus:border-indigo-500 focus:outline-none focus:ring-0"
+            />
+            <button
+              type="button"
+              onClick={() => shiftSelectedDate(1)}
+              disabled={selectedDate >= todayId}
+              className="text-xs px-3 py-2 rounded-md border border-slate-700 text-slate-200 hover:border-indigo-500 disabled:opacity-60 flex items-center justify-center"
+              aria-label="Next day"
+            >
+              <span className="sr-only">Next day</span>
+              <ArrowRightIcon />
+            </button>
+            <button
+              type="button"
+              onClick={() => handleDateChange(todayId)}
+              disabled={selectedDate === todayId}
+              className="text-xs px-3 py-2 rounded-md border border-slate-700 text-slate-200 hover:border-indigo-500 disabled:opacity-60"
+            >
+              Jump to today
+            </button>
+            <button
+              type="button"
+              onClick={() => setPendingDeleteDay(todayLog.date)}
+              className="text-xs px-3 py-2 rounded-md border border-red-700 text-red-200 hover:border-red-500 hover:text-red-100"
+            >
+              Delete this day
+            </button>
+          </div>
+        </div>
         <button
           onClick={runManualDailyAnalysis}
           disabled={manualInsightRunning}
@@ -620,12 +757,16 @@ export const TodayPage: React.FC = () => {
             const totalFat = todayLog.meals
               .map((m) => m.finalFatGrams ?? m.llmFatGrams ?? 0)
               .reduce((a, b) => a + (b ?? 0), 0);
+            const totalFiber = todayLog.meals
+              .map((m) => m.finalFiberGrams ?? m.llmFiberGrams ?? 0)
+              .reduce((a, b) => a + (b ?? 0), 0);
             const totalKcal = todayLog.meals
-              .map((m) => m.finalCaloriesEstimate ?? m.llmCaloriesEstimate ?? m.userCaloriesEstimate ?? 0)
+              .map((m) => m.finalCaloriesEstimate ?? m.llmCaloriesEstimate ?? 0)
               .reduce((a, b) => a + (b ?? 0), 0);
             const proteinStatus = macroStatus("protein", totalProtein, totalKcal);
             const carbStatus = macroStatus("carbs", totalCarbs, totalKcal);
             const fatStatus = macroStatus("fat", totalFat, totalKcal);
+            const fiberTrend = fiberStatus(totalFiber);
             return (
               <>
                 <div className="space-y-0.5">
@@ -633,7 +774,7 @@ export const TodayPage: React.FC = () => {
                   <div className="font-semibold">{totalKcal} kcal</div>
                 </div>
                 <div className="space-y-1 text-xs text-slate-400">
-                  <span>Macros (grams)</span>
+                  <span>Macros & fiber (grams)</span>
                   <div className="text-sm text-slate-200 font-semibold flex flex-wrap gap-3">
                     <span className={proteinStatus.color}>
                       Protein: {totalProtein} g
@@ -644,7 +785,11 @@ export const TodayPage: React.FC = () => {
                     <span className={fatStatus.color}>
                       Fat: {totalFat} g
                     </span>
+                    <span className={fiberTrend.color}>
+                      Fiber: {totalFiber} g
+                    </span>
                   </div>
+                  <p className="text-[11px] text-slate-500">Fiber target: roughly 25–35 g/day.</p>
                 </div>
                 <div className="flex flex-wrap items-center gap-2 text-[10px] text-slate-500">
                   <span>Legend:</span>
@@ -660,6 +805,10 @@ export const TodayPage: React.FC = () => {
                     <span className="inline-block h-2 w-4 rounded bg-red-300" />
                     <span>High</span>
                   </span>
+                  <span className="inline-flex items-center gap-1">
+                    <span className="inline-block h-2 w-4 rounded bg-amber-300" />
+                    <span>High fiber</span>
+                  </span>
                 </div>
               </>
             );
@@ -668,40 +817,15 @@ export const TodayPage: React.FC = () => {
         <div className="flex flex-col gap-3">
           <div className="rounded-xl border border-indigo-900/60 bg-slate-900/50 p-3 space-y-3">
             <div className="space-y-1">
-              <label className="text-xs text-slate-400">Meal description</label>
+              <label className="text-xs text-slate-400">
+                Meal description (include any calorie notes or macros)
+              </label>
               <textarea
                 className="w-full min-h-[100px]"
                 value={newMeal}
                 onChange={(e) => setNewMeal(e.target.value)}
                 placeholder="e.g. 200g Greek yogurt, 1 banana, 15g walnuts"
               />
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <div className="space-y-1 min-w-[150px] flex-1">
-                <label className="text-xs text-slate-400">Kcal estimate (optional)</label>
-                <input
-                  type="number"
-                  className="w-full"
-                  value={manualCalories}
-                  onChange={(e) => setManualCalories(e.target.value)}
-                  placeholder="e.g. 420"
-                />
-              </div>
-              <div className="space-y-1 min-w-[150px] flex-1">
-                <label className="text-xs text-slate-400">Confidence (1–5)</label>
-                <select
-                  className="w-full"
-                  value={calorieConfidence}
-                  onChange={(e) => setCalorieConfidence(e.target.value)}
-                  disabled={!manualCalories.trim()}
-                >
-                  <option value="1">1 – Not confident</option>
-                  <option value="2">2</option>
-                  <option value="3">3 – Moderate</option>
-                  <option value="4">4</option>
-                  <option value="5">5 – Very confident</option>
-                </select>
-              </div>
             </div>
             <div className="space-y-1">
               <label className="text-xs text-slate-400">
@@ -736,53 +860,9 @@ export const TodayPage: React.FC = () => {
               )}
             </div>
             <div className="border-t border-slate-800 pt-2 space-y-2">
-              <details>
-                <summary className="text-xs text-slate-400 cursor-pointer">Insert preset into description</summary>
-                <div className="mt-2 space-y-1">
-                  <div className="flex flex-col sm:flex-row gap-2">
-                    <select
-                      value={selectedPresetId}
-                      onChange={(e) => setSelectedPresetId(e.target.value)}
-                      className="flex-1 w-full"
-                    >
-                      <option value="">Choose a preset</option>
-                      {savedPresets.map((p) => (
-                        <option key={p.id ?? p.key} value={String(p.id)}>
-                          {p.label} – {p.defaultCalories} kcal
-                        </option>
-                      ))}
-                    </select>
-                    <button
-                      type="button"
-                      onClick={insertPresetIntoMeal}
-                      className="text-xs w-full sm:w-auto px-3 py-2 rounded-md border border-slate-700 hover:border-indigo-500"
-                    >
-                      Insert
-                    </button>
-                  </div>
-                  <p className="text-[11px] text-slate-500">
-                    Adds preset text with exact calories into the meal so AI treats it as certain.
-                  </p>
-                </div>
-              </details>
-              <label className="flex items-center gap-2 text-xs text-slate-400">
-                <input
-                  type="checkbox"
-                  className="h-4 w-4 rounded border-slate-600"
-                  checked={saveAsPreset}
-                  onChange={(e) => setSaveAsPreset(e.target.checked)}
-                />
-                Save this as a reusable preset
-              </label>
-              {saveAsPreset && (
-                <input
-                  type="text"
-                  className="text-xs w-full sm:w-56"
-                  placeholder="Preset name (e.g. Standard cappuccino)"
-                  value={presetName}
-                  onChange={(e) => setPresetName(e.target.value)}
-                />
-              )}
+              <p className="text-[11px] text-slate-500">
+                Add as many meals as you want throughout the day. Photos are optional but help with estimates.
+              </p>
             </div>
           </div>
 
@@ -800,7 +880,7 @@ export const TodayPage: React.FC = () => {
             <p className="text-xs text-slate-500">No meals logged yet.</p>
           )}
           {todayLog.meals.map((meal) => {
-            const finalCalories = meal.finalCaloriesEstimate ?? meal.llmCaloriesEstimate ?? meal.userCaloriesEstimate;
+            const finalCalories = meal.finalCaloriesEstimate ?? meal.llmCaloriesEstimate;
             const calories = finalCalories;
             const isEditing = editingMealId === meal.id;
             return (
@@ -823,20 +903,6 @@ export const TodayPage: React.FC = () => {
                     )}
                     {!isEditing && (
                       <div className="flex flex-wrap items-center gap-2 text-xs text-slate-400 mt-1">
-                        {meal.presetLabel && (
-                          <span className="text-emerald-400">
-                            Preset: {meal.presetLabel}
-                          </span>
-                        )}
-                        {meal.userCaloriesEstimate != null && (
-                          <span>
-                            Your estimate:{" "}
-                            <span className="text-amber-300 font-medium">
-                              {meal.userCaloriesEstimate} kcal
-                            </span>
-                            {meal.userCaloriesConfidence ? ` (${meal.userCaloriesConfidence}/5 confidence)` : ""}
-                          </span>
-                        )}
                         {meal.llmCaloriesEstimate != null && (
                           <span>
                             LLM estimate:{" "}
@@ -859,14 +925,27 @@ export const TodayPage: React.FC = () => {
                             <span className="text-slate-100 font-medium">
                               Protein {meal.finalProteinGrams ?? meal.llmProteinGrams ?? 0}g · Carbs{" "}
                               {meal.finalCarbsGrams ?? meal.llmCarbsGrams ?? 0}g · Fat{" "}
-                              {meal.finalFatGrams ?? meal.llmFatGrams ?? 0}g
+                              {meal.finalFatGrams ?? meal.llmFatGrams ?? 0}g · Fiber{" "}
+                              {meal.finalFiberGrams ?? meal.llmFiberGrams ?? 0}g
                             </span>
                           </span>
                         )}
                         {meal.llmCaloriesExplanation && (
                           <span className="text-[11px] text-slate-500">
-                            Reason: {meal.llmCaloriesExplanation}
+                            Calorie breakdown: {meal.llmCaloriesExplanation}
                           </span>
+                        )}
+                        {meal.llmImprovementSuggestions && meal.llmImprovementSuggestions.length > 0 && (
+                          <div className="text-[11px] text-slate-500 flex flex-col gap-1">
+                            <span className="text-slate-400">Improvements:</span>
+                            <ul className="list-disc pl-4 space-y-0.5">
+                              {meal.llmImprovementSuggestions.map((tip, idx) => (
+                                <li key={`${meal.id}-improve-${idx}`} className="text-slate-400">
+                                  {tip}
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
                         )}
                       </div>
                     )}
@@ -930,42 +1009,19 @@ export const TodayPage: React.FC = () => {
                         />
                       )}
                     </div>
-                    <div className="grid sm:grid-cols-3 gap-2">
-                      <div className="space-y-1">
-                        <label className="text-[11px] text-slate-400">Your estimate</label>
-                        <input
-                          type="number"
-                          className="w-full"
-                          value={editUserCalories}
-                          onChange={(e) => setEditUserCalories(e.target.value)}
-                          placeholder="e.g. 420"
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <label className="text-[11px] text-slate-400">Confidence (1–5)</label>
-                        <select className="w-full" value={editConfidence} onChange={(e) => setEditConfidence(e.target.value)}>
-                          <option value="">Not set</option>
-                          <option value="1">1</option>
-                          <option value="2">2</option>
-                          <option value="3">3</option>
-                          <option value="4">4</option>
-                          <option value="5">5</option>
-                        </select>
-                      </div>
-                      <div className="space-y-1">
-                        <label className="text-[11px] text-slate-400">Final estimate (editable)</label>
-                        <input
-                          type="number"
-                          className="w-full"
-                          value={editFinalCalories}
-                          onChange={(e) => setEditFinalCalories(e.target.value)}
-                          placeholder="e.g. 480"
-                        />
-                      </div>
+                    <div className="space-y-1 max-w-xs">
+                      <label className="text-[11px] text-slate-400">Final estimate (editable)</label>
+                      <input
+                        type="number"
+                        className="w-full"
+                        value={editFinalCalories}
+                        onChange={(e) => setEditFinalCalories(e.target.value)}
+                        placeholder="e.g. 480"
+                      />
                     </div>
                     <p className="text-[11px] text-slate-500">
-                      Editing the description, your estimate, or confidence will re-run the LLM and reset the final
-                      estimate to the new LLM result.
+                      Editing the description or photo will re-run the LLM and reset the final estimate to the new LLM
+                      result.
                     </p>
                     <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
                       <button
@@ -999,6 +1055,34 @@ export const TodayPage: React.FC = () => {
           })}
         </div>
       </section>
+
+      <ConfirmModal
+        open={pendingCreateDate !== null}
+        title="Create daily log?"
+        message={`No daily log exists for ${pendingCreateDate ?? ""}. Create a blank entry for this date?`}
+        confirmLabel="Create log"
+        cancelLabel="Stay on current day"
+        onConfirm={() => {
+          if (!pendingCreateDate) return;
+          void createBlankLog(pendingCreateDate);
+          setPendingCreateDate(null);
+        }}
+        onCancel={() => setPendingCreateDate(null)}
+      />
+
+      <ConfirmModal
+        open={pendingDeleteDay !== null}
+        title="Delete this day?"
+        message={`This will remove all meals, notes, basics, and insights for ${pendingDeleteDay ?? ""}.`}
+        confirmLabel="Delete day"
+        cancelLabel="Cancel"
+        onConfirm={() => {
+          if (!pendingDeleteDay) return;
+          void deleteDay(pendingDeleteDay);
+          setPendingDeleteDay(null);
+        }}
+        onCancel={() => setPendingDeleteDay(null)}
+      />
 
       <ConfirmModal
         open={pendingDeleteMealId !== null}

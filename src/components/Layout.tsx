@@ -83,14 +83,6 @@ export const Layout: React.FC<Props> = ({ children }) => {
                 History
               </NavLink>
               <NavLink
-                to="/presets"
-                className={({ isActive }) =>
-                  `px-2 py-1 rounded-md ${isActive ? "bg-slate-800 text-indigo-300" : "text-slate-300 hover:text-white"}`
-                }
-              >
-                Presets
-              </NavLink>
-              <NavLink
                 to="/insights"
                 className={({ isActive }) =>
                   `px-2 py-1 rounded-md ${isActive ? "bg-slate-800 text-indigo-300" : "text-slate-300 hover:text-white"}`
@@ -123,7 +115,6 @@ export const Layout: React.FC<Props> = ({ children }) => {
               {[
                 { to: "/today", label: "Today" },
                 { to: "/history", label: "History" },
-                { to: "/presets", label: "Presets" },
                 { to: "/insights", label: "Insights" },
                 { to: "/jobs", label: "Jobs" },
                 { to: "/settings", label: "Settings" },
