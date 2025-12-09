@@ -138,7 +138,7 @@ export const SettingsPage: React.FC = () => {
       <section className="space-y-2">
         <h2 className="text-sm font-semibold text-slate-200">OpenAI API key</h2>
         <p className="text-xs text-slate-400">
-          Create an API key in your OpenAI account, then paste it here. It is stored only in your browser&apos;s localStorage.
+          Create an API key in your OpenAI account, then paste it here. It is stored in your browser&apos;s localStorage and included in Drive/file backups so you don&apos;t have to re-enter it after a restore.
         </p>
         <input
           type="password"

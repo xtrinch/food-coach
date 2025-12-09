@@ -33,7 +33,7 @@ Most food trackers only tally calories. Food Coach tries to explain trends in we
 - Includes a placeholder for custom time-range analysis.
 
 ### Settings and data management
-- Saves the OpenAI API key locally.
+- Saves the OpenAI API key locally and includes it in Drive/file backups.
 - Exports all data (logs, insights, jobs) as JSON.
 - Provides manual Google Drive backup/restore using `VITE_GOOGLE_CLIENT_ID` (default `130912411880-u34hui50kge8g4kjvc7m88slfsoutrj5.apps.googleusercontent.com`).
 - Offers a “danger zone” action to clear local data.

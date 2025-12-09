@@ -6,6 +6,9 @@ export type BackupPayload = {
   dailyLogs: DailyLog[];
   dailyInsights: DailyInsight[];
   analysisJobs: AnalysisJobRecord[];
+  settings: {
+    openAiApiKey: string | null;
+  };
 };
 
 type LegacyBackup = {
@@ -13,6 +16,7 @@ type LegacyBackup = {
   insights?: DailyInsight[];
   analysisJobs?: AnalysisJobRecord[];
   generatedAt?: string;
+  openAiApiKey?: string | null;
 };
 
 export function backupFileName(date = new Date()) {
@@ -20,6 +24,8 @@ export function backupFileName(date = new Date()) {
 }
 
 export async function buildBackup(): Promise<BackupPayload> {
+  const storedKey =
+    typeof localStorage !== "undefined" ? localStorage.getItem("openai_api_key") : null;
   const [dailyLogs, dailyInsights, analysisJobs] = await Promise.all([
     db.dailyLogs.toArray(),
     db.dailyInsights.toArray(),
@@ -32,6 +38,9 @@ export async function buildBackup(): Promise<BackupPayload> {
     dailyLogs,
     dailyInsights,
     analysisJobs,
+    settings: {
+      openAiApiKey: storedKey,
+    },
   };
 }
 
@@ -42,6 +51,7 @@ export function normalizeBackupPayload(raw: unknown): BackupPayload {
   const dailyLogs = (data.dailyLogs ?? data.logs ?? []) as DailyLog[];
   const dailyInsights = (data.dailyInsights ?? data.insights ?? []) as DailyInsight[];
   const analysisJobs = (data.analysisJobs ?? []) as AnalysisJobRecord[];
+  const openAiApiKey = data.settings?.openAiApiKey ?? data.openAiApiKey ?? null;
 
   const normalizedLogs = dailyLogs.map((log) => {
     const notes = (log as any).notes ?? (log as any).symptoms ?? [];
@@ -56,6 +66,9 @@ export function normalizeBackupPayload(raw: unknown): BackupPayload {
     dailyLogs: normalizedLogs,
     dailyInsights,
     analysisJobs,
+    settings: {
+      openAiApiKey,
+    },
   };
 }
 
@@ -80,4 +93,12 @@ export async function restoreBackup(raw: unknown): Promise<void> {
       await db.analysisJobs.bulkAdd(payload.analysisJobs);
     }
   });
+
+  if (typeof localStorage !== "undefined") {
+    if (payload.settings?.openAiApiKey) {
+      localStorage.setItem("openai_api_key", payload.settings.openAiApiKey);
+    } else {
+      localStorage.removeItem("openai_api_key");
+    }
+  }
 }
