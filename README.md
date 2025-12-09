@@ -1,127 +1,84 @@
-# Food Coach – Local‑Only AI Food & Health Advisor
+# Food Coach – Local-Only Food & Health Advisor
 
-Food Coach is a **fully client-side nutrition, notes, and daily-health tracking app** with **AI‑powered insights**.  
-It runs entirely on the user’s device, stores all data locally using IndexedDB, and uses the **user’s own OpenAI API key** for all AI calls.
-
-No backend. No server. No accounts.  
-Just a static React/Vite app that you can install as a PWA or bundle into an Android APK.
+Food Coach is a fully client-side nutrition, journaling, and daily-health tracking app with lightweight AI assistance. It runs entirely in the browser, stores data in IndexedDB, and sends model calls straight to OpenAI using the user’s own API key—no accounts or servers required.
 
 ---
 
-## ⭐ Core Idea
+## Core Idea
 
-Traditional food tracking apps only count calories.  
-Food Coach aims to *explain your body* using AI:
-
-- Why your weight changed
-- Why you feel bloated
-- Why your energy is low
-- What patterns exist in your recent logs
-- What actionable steps to take tomorrow
-
-Every night around **22:00**, the app automatically generates a daily AI insight.
-
-Everything stays on the device.  
-Only LLM calls go to OpenAI using the user’s own key.
+Most food trackers only tally calories. Food Coach tries to explain trends in weight, bloating, energy, and habits by examining the past two weeks of logs. Each night at 22:00 the app creates a structured “insight” that highlights contributing factors, suggests next steps, and records caveats. Everything stays on-device except outbound LLM calls, and those are authenticated with the user’s key.
 
 ---
 
-## ✨ Features
+## Features
 
-### 🥣 Meal Logging with AI Calorie Estimation
-- User types any natural-language meal description.
-- AI estimates calories.
-- User confirms/edits calories.
-- Confirmed calories are saved to the entry.
-### 🧠 Automatic Daily Insights (22:00)
-Analyzes:
-- sleep
-- stress
-- weight
-- meals
-- notes  
-…over the last ~14 days.
+### Meal logging with calorie estimates
+- Accepts natural-language meal descriptions.
+- Calls an LLM for an initial calorie estimate that the user can confirm or edit.
+- Saves the confirmed value alongside any free-form notes.
 
-Generates:
-- weight explanation  
-- bloating explanation  
-- patterns  
-- actions for tomorrow  
-- caveats  
+### Automatic daily insights
+- Reviews recent sleep, stress, weight, meals, and notes.
+- Generates explanations for weight changes or bloating, pattern summaries, and recommended actions.
+- Stores insights in IndexedDB for later review.
 
-Stored forever in IndexedDB.
+### History page
+- Lists meals, symptoms, and biometrics with timestamps.
+- Allows expanding entries for detailed notes.
+- Indicates whether a given day already has an insight.
 
-### 📅 History Page
-- Meals + timestamps
-- Symptoms
-- Weight, sleep, stress
-- Expandable details
-- Shows whether a daily insight exists
+### Insights page
+- Shows every stored insight in chronological order.
+- Supports re-running the daily insight for a past date.
+- Includes a placeholder for custom time-range analysis.
 
-### 🔍 Insights Page
-- All generated insights
-- Re-run daily insight for any day
-- Custom period analysis (placeholder)
+### Settings and data management
+- Saves the OpenAI API key locally.
+- Exports all data (logs, insights, jobs) as JSON.
+- Provides manual Google Drive backup/restore using `VITE_GOOGLE_CLIENT_ID` (default `130912411880-u34hui50kge8g4kjvc7m88slfsoutrj5.apps.googleusercontent.com`).
+- Offers a “danger zone” action to clear local data.
 
-### ⚙️ Settings
-- Save OpenAI API key (local)
-- Export all data (logs, insights, jobs) as JSON
-- Manual Google Drive backup/restore (private app data)
-- Clear all local data (danger zone)
-  
-Google Drive uses a baked-in OAuth client ID (env `VITE_GOOGLE_CLIENT_ID`, default: `130912411880-u34hui50kge8g4kjvc7m88slfsoutrj5.apps.googleusercontent.com`).
-
-### 💾 Local-Only Storage
-- IndexedDB via Dexie
-- All data lives in user's browser
-
-### 📱 Installable PWA
-- Works offline except AI calls
-- Usable on mobile + desktop
-- Perfect for hosting on GitHub Pages
+### Local-first storage and PWA support
+- Dexie/IndexedDB persistence keeps data entirely in the browser.
+- The PWA shell works offline aside from outbound AI calls.
+- Static build is suitable for GitHub Pages hosting or bundling into an Android APK.
 
 ---
 
-## 🧱 Technical Architecture
+## Technical Architecture
 
-- **React 18**
-- **Vite**
-- **TypeScript**
-- **Tailwind CSS**
-- **React Router**
-- **Dexie / IndexedDB**
-- **vite-plugin-pwa**
+- React 18
+- Vite
+- TypeScript
+- Tailwind CSS
+- React Router
+- Dexie / IndexedDB
+- `vite-plugin-pwa`
 
-### AI
-- OpenAI `gpt-4.1-mini` by default
-- Browser → OpenAI direct
-- Uses user’s API key from localStorage
+### AI integration
+- Uses OpenAI `gpt-4.1-mini` by default.
+- Requests originate directly from the browser.
+- The user’s API key is stored in `localStorage`.
 
-### Database Schema
+### Database schema
 - `dailyLogs`
 - `dailyInsights`
 - `analysisJobs`
 
 ---
 
-## 🛠 Development
+## Development
 
 ```bash
 npm install
 npm run dev
 ```
 
-App will run under:
-
-```
-http://localhost:5173/food-coach/
-```
-
-Paste your OpenAI API key into **Settings**.
+Local dev server: `http://localhost:5173/food-coach/`. Add your OpenAI key in **Settings** before running analyses.
 
 ---
 
-## 🚀 Building
+## Building
 
 ### Build static files
 ```bash
@@ -129,44 +86,36 @@ npm run build
 ```
 
 ### Deploy to GitHub Pages
-1. Ensure **Settings → Pages → Build and deployment** is set to *GitHub Actions*.
-2. Push to `main` (or run the `Deploy to GitHub Pages` workflow manually) and let `.github/workflows/deploy.yml` build + publish the `dist/` output.
-3. GitHub serves the site from `https://<username>.github.io/food-coach/` using the generated `gh-pages` branch.
+1. In GitHub → Settings → Pages, set **Build and deployment** to **GitHub Actions**.
+2. Push to `main` (or manually trigger the “Deploy to GitHub Pages” workflow). `.github/workflows/deploy.yml` installs dependencies, runs the Vite build, uploads `dist/`, and publishes to Pages.
+3. GitHub serves the site from `https://<username>.github.io/food-coach/` via the generated `gh-pages` branch.
 
-> Need a one-off manual deploy? `npm run deploy` still pushes the latest local `dist/` folder to the `gh-pages` branch via the [`gh-pages`](https://www.npmjs.com/package/gh-pages) CLI.
+Need a one-off manual deployment instead? `npm run deploy` still pushes the local `dist/` folder to `gh-pages` through the [`gh-pages`](https://www.npmjs.com/package/gh-pages) CLI.
 
 ### Build Android APK (optional)
-Prereqs: Android SDK + Java 17 installed (project targets Java 17 by default), `android/local.properties` points to your SDK. Run `npx cap add android` once to create the native project (already in repo).
+Prerequisites: Android SDK + Java 17, `android/local.properties` pointing to the SDK, and `npx cap add android` executed once.
 
 ```bash
-# build with Capacitor-friendly base path
+# build with the Capacitor-friendly base path
 npm run build:android
 npx cap sync android
 cd android && GRADLE_USER_HOME=../.gradle ./gradlew assembleDebug
-# install to a plugged-in device with USB debugging on:
+# install on a connected device
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
 
-Open the project in Android Studio instead of CLI: `npx cap open android`. For distribution, create a signed release build (`assembleRelease`) with your signing config.
+Open Android Studio with `npx cap open android` if you prefer the IDE. For releases, create a signed `assembleRelease` build with your keystore.
 
 ---
 
-## ⚠️ Current Limitations
+## Current Limitations
 
-- Weekly/monthly analyses not yet implemented
-- Custom analysis uses placeholder
-- Drive sync is manual (no scheduled/auto backup yet)
+- Weekly/monthly analysis views are not implemented.
+- Custom analysis still uses a placeholder.
+- Google Drive sync is manual and unscheduled.
 
 ---
 
-## ❤️ Philosophy
+## Project Principles
 
-Food Coach is designed to be:
-
-- local-first  
-- privacy-respecting  
-- AI-powered  
-- actionable  
-- personalized  
-
-A coach that helps you understand your body — not just track calories.
+Food Coach aims to be local-first, privacy-respecting, actionable, and personalized. It is intentionally client-only so users keep control over their data while still benefiting from helpful explanations of their daily habits.
