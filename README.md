@@ -129,9 +129,11 @@ npm run build
 ```
 
 ### Deploy to GitHub Pages
-```bash
-npm run deploy
-```
+1. Ensure **Settings → Pages → Build and deployment** is set to *GitHub Actions*.
+2. Push to `main` (or run the `Deploy to GitHub Pages` workflow manually) and let `.github/workflows/deploy.yml` build + publish the `dist/` output.
+3. GitHub serves the site from `https://<username>.github.io/food-coach/` using the generated `gh-pages` branch.
+
+> Need a one-off manual deploy? `npm run deploy` still pushes the latest local `dist/` folder to the `gh-pages` branch via the [`gh-pages`](https://www.npmjs.com/package/gh-pages) CLI.
 
 ### Build Android APK (optional)
 Prereqs: Android SDK + Java 17 installed (project targets Java 17 by default), `android/local.properties` points to your SDK. Run `npx cap add android` once to create the native project (already in repo).
