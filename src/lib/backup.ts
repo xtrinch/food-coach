@@ -1,4 +1,5 @@
-import { db, DailyInsight, DailyLog, AnalysisJobRecord } from "./db";
+import { db, DailyInsight, DailyLog, AnalysisJobRecord, MealEntry } from "./db";
+import { compressImageDataUrl } from "./imageCompression";
 
 export type BackupPayload = {
   version: 1;
@@ -26,11 +27,12 @@ export function backupFileName(date = new Date()) {
 export async function buildBackup(): Promise<BackupPayload> {
   const storedKey =
     typeof localStorage !== "undefined" ? localStorage.getItem("openai_api_key") : null;
-  const [dailyLogs, dailyInsights, analysisJobs] = await Promise.all([
+  const [rawDailyLogs, dailyInsights, analysisJobs] = await Promise.all([
     db.dailyLogs.toArray(),
     db.dailyInsights.toArray(),
     db.analysisJobs.toArray(),
   ]);
+  const dailyLogs = await compressPhotosForBackup(rawDailyLogs);
 
   return {
     version: 1,
@@ -42,6 +44,34 @@ export async function buildBackup(): Promise<BackupPayload> {
       openAiApiKey: storedKey,
     },
   };
+}
+
+async function compressPhotosForBackup(logs: DailyLog[]): Promise<DailyLog[]> {
+  const optimized: DailyLog[] = [];
+  for (const log of logs) {
+    let mealsChanged = false;
+    const nextMeals: MealEntry[] = [];
+    for (const meal of log.meals) {
+      if (!meal.photoDataUrl) {
+        nextMeals.push(meal);
+        continue;
+      }
+      try {
+        const nextPhoto = await compressImageDataUrl(meal.photoDataUrl);
+        if (nextPhoto !== meal.photoDataUrl) {
+          mealsChanged = true;
+          nextMeals.push({ ...meal, photoDataUrl: nextPhoto });
+        } else {
+          nextMeals.push(meal);
+        }
+      } catch (err) {
+        console.warn("Failed to compress meal photo during backup", err);
+        nextMeals.push(meal);
+      }
+    }
+    optimized.push(mealsChanged ? { ...log, meals: nextMeals } : log);
+  }
+  return optimized;
 }
 
 export function normalizeBackupPayload(raw: unknown): BackupPayload {

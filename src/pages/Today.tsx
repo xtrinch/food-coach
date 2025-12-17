@@ -3,6 +3,7 @@ import { db, useLiveDailyLog, MealEntry, getTodayId } from "../lib/db";
 import { useAnalysisJobs } from "../lib/analysisJobs";
 import { runDailyInsightIfNeeded, runMealCaloriesEstimation } from "../lib/openai";
 import { ConfirmModal } from "../components/ConfirmModal";
+import { compressImageFile, fileToDataUrl } from "../lib/imageCompression";
 
 const ArrowLeftIcon: React.FC<{ className?: string }> = ({ className = "h-4 w-4" }) => (
   <svg
@@ -80,14 +81,22 @@ export const TodayPage: React.FC = () => {
   };
 
   const handlePhotoUpload = (file: File, setter: (data: string | null) => void) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const result = reader.result;
-      if (typeof result === "string") {
-        setter(result);
+    const process = async () => {
+      try {
+        const compressed = await compressImageFile(file);
+        setter(compressed);
+      } catch (err) {
+        console.error("Failed to compress image, falling back to original file", err);
+        try {
+          const fallback = await fileToDataUrl(file);
+          setter(fallback);
+        } catch (fallbackErr) {
+          console.error("Failed to read image file", fallbackErr);
+          setter(null);
+        }
       }
     };
-    reader.readAsDataURL(file);
+    void process();
   };
 
   useEffect(() => {
